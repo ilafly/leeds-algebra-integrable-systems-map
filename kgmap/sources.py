@@ -247,6 +247,8 @@ def openalex_publication(work, researcher_id):
                 "affiliations": [i.get("display_name") for i in a.get("institutions", [])]} for a in work.get("authorships", [])],
             "date": work.get("publication_date"), "year": work.get("publication_year"),
             "doi": doi, "doi_aliases": [doi] if doi else [], "arxiv_id": arxiv, "openalex_ids": [work["id"]],
+            "full_text_locations": [{"url": loc["pdf_url"], "license": loc.get("license"), "version": loc.get("version"),
+                "is_oa": True, "metadata_source": work["id"]} for loc in work.get("locations", []) if loc.get("is_oa") and loc.get("pdf_url")],
             "url": "https://doi.org/" + doi if doi else (urls[0] if urls else work["id"]),
             "urls": list(dict.fromkeys([work["id"], *urls])), "researcher_ids": [researcher_id],
             "type": work.get("type"), "is_retracted": work.get("is_retracted", False),
@@ -392,6 +394,9 @@ def deduplicate(records):
             versions = item.get("manifestations") or [{k: item.get(k) for k in ("id", "title", "date", "doi", "arxiv_id", "url")}]
             p["manifestations"].extend(v for v in versions if v not in p["manifestations"])
         for other in group[1:]:
+            for loc in other.get("full_text_locations", []):
+                if loc not in p.setdefault("full_text_locations", []):
+                    p["full_text_locations"].append(loc)
             for field in ["researcher_ids", "openalex_ids", "urls"]:
                 p[field] = list(dict.fromkeys([*p.get(field, []), *other.get(field, [])]))
             p["provenance"].extend(e for e in other.get("provenance", []) if e not in p["provenance"])

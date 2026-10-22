@@ -66,7 +66,7 @@ def discover_phrases(documents, vocabulary):
             for phrase, n in counts.items() if n >= 2}
 
 
-def extract_concepts(publications, researchers, vocabulary=None):
+def extract_concepts(publications, researchers, vocabulary=None, include_full_text=True):
     vocabulary = vocabulary if vocabulary is not None else load_vocabulary()
     auto = discover_phrases([p["title"] for p in publications if not p.get("quarantined") and not p.get("is_retracted")], vocabulary)
     terms = {**auto, **vocabulary}
@@ -79,13 +79,21 @@ def extract_concepts(publications, researchers, vocabulary=None):
             continue
         for field in ("title", "abstract"):
             if p.get(field):
-                documents.append((p["id"], field, p[field], source_for(p, field)))
+                documents.append((p["id"], field, p[field], source_for(p, field), None))
+        if include_full_text:
+            from .fulltext import document
+            doc = document(p)
+            if doc:
+                for page in doc["pages"]:
+                    if page["analysis_text"].strip():
+                        documents.append((p["id"], "full_text", page["analysis_text"], doc["source_url"].split("#")[0] + "#page=" + str(page["page"]), page["page"]))
     for r in researchers:
         if r.get("status") == "verified":
             for desc in r.get("profile", {}).get("descriptions", []):
-                documents.append(("researcher:" + r["id"], "research_description", desc["text"], desc["source"]))
+                documents.append(("researcher:" + r["id"], "research_description", desc["text"], desc["source"], None))
     concepts, mentions = {}, []
-    for owner, field, text, url in documents:
+    seen_full = set()
+    for owner, field, text, url, page in documents:
         clean = normalise(text)
         matches = []
         for label, patterns in compiled.items():
@@ -101,14 +109,19 @@ def extract_concepts(publications, researchers, vocabulary=None):
                     continue
                 phrase = standalone[0].group()
             cid = stable_id("concept", normalise(label))
+            if field == "full_text":
+                if (owner, cid) in seen_full:
+                    continue
+                seen_full.add((owner, cid))
             validated = label in vocabulary
             concepts[cid] = {"id": cid, "label": label, "kind": "concept",
                              "terminology_status": "normalised_vocabulary" if validated else "unvalidated_extracted_phrase",
                              "aliases": terms[label]}
             mentions.append({"owner": owner, "concept": cid, "field": field,
                 **evidence(url, "normalised_phrase_match" if validated else "recurring_mathematical_title_phrase",
-                           excerpt(text, phrase), 0.9 if validated else 0.55,
-                           matched_phrase=phrase, reliability="explicit_text", status="extracted")})
+                           excerpt(text, phrase), 0.75 if field == "full_text" else 0.9 if validated else 0.55,
+                           matched_phrase=phrase, reliability="explicit_text", status="extracted",
+                           **({"page": page, "text_origin": "PDF_body", "extraction_method": "pypdf-body-v1"} if page is not None else {}))})
     return concepts, mentions
 
 

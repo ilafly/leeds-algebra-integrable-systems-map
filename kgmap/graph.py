@@ -50,31 +50,42 @@ def build_graph(snapshot, reviews=None):
     return graph
 
 
-def filtered_snapshot(snapshot, years=None, concept=None, researcher=None, reviews=None):
+def filtered_snapshot(snapshot, years=None, concept=None, researcher=None, reviews=None, include_full_text=None):
     """Recompute all inferred relationships from the visible publication sample."""
     from .concepts import related_concepts
     from .connections import discover_connections
     reviews = reviews or {}
+    if include_full_text is None:
+        include_full_text = snapshot.get("analysis", {}).get("include_full_text", True)
+    if include_full_text and not snapshot.get("analysis", {}).get("include_full_text", True):
+        from .concepts import extract_concepts
+        concepts, mentions = extract_concepts(snapshot["publications"], snapshot["researchers"])
+        snapshot = {**snapshot, "concepts": concepts, "mentions": mentions}
     publications = [p for p in snapshot["publications"] if not p.get("is_retracted") and not p.get("quarantined")
                     and (not years or (p.get("year") is not None and years[0] <= p["year"] <= years[1]))]
     if researcher:
         publications = [p for p in publications if researcher in p["researcher_ids"]]
+    from .fulltext import document
+    full_owners = {p["id"] for p in publications if include_full_text and document(p)}
+    available_mentions = [m for m in snapshot["mentions"]
+                          if (m["field"] != "full_text" or m["owner"] in full_owners)
+                          and reviews.get(stable_id("mention", m["owner"], m["concept"], m["field"]), {}).get("status") != "rejected"]
     if concept:
-        owners = {m["owner"] for m in snapshot["mentions"] if m["concept"] == concept}
+        owners = {m["owner"] for m in available_mentions if m["concept"] == concept}
         publications = [p for p in publications if p["id"] in owners]
     owners = {p["id"] for p in publications}
     # Profile descriptions have no publication date; exclude them when date filtering is active.
     if not years:
         owners.update("researcher:" + r["id"] for r in snapshot["researchers"]
                       if not researcher or r["id"] == researcher)
-    mentions = [m for m in snapshot["mentions"] if m["owner"] in owners
-                and reviews.get(stable_id("mention", m["owner"], m["concept"], m["field"]), {}).get("status") != "rejected"]
+    mentions = [m for m in available_mentions if m["owner"] in owners]
     visible = {m["concept"] for m in mentions}
     concepts = {k: v for k, v in snapshot["concepts"].items() if k in visible}
     relations = [e for e in related_concepts(concepts, mentions) if reviews.get(e["id"], {}).get("status") != "rejected"]
-    connections = discover_connections(snapshot["researchers"], publications, concepts, mentions, relations)
+    connections = discover_connections(snapshot["researchers"], publications, concepts, mentions, relations, include_full_text=include_full_text)
     return {**snapshot, "publications": publications, "mentions": mentions, "concepts": concepts,
-            "concept_relations": relations, "connections": connections}
+            "concept_relations": relations, "connections": connections,
+            "analysis": {"include_full_text": include_full_text}}
 
 
 def graph_view(graph, view, threshold=0.0, types=None, include_rejected=False):

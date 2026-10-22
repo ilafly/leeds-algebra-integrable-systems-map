@@ -7,6 +7,13 @@ contact_email = ""
 crossref_enrichment = true
 arxiv_enrichment = true
 
+[full_text]
+# Invoked explicitly with `python -m kgmap.cli fulltext`; never on app load.
+max_papers = 30
+max_pdf_mb = 20
+max_pages = 200
+min_words = 200
+
 [[researchers]]
 id = "ilaria-colazzo"
 name = "Ilaria Colazzo"

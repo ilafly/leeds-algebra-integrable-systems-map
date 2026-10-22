@@ -59,3 +59,44 @@ def test_import_validation_is_atomic(tmp_path):
     assert store.reviews() == {}
     with pytest.raises(ValueError, match="note"):
         store.review("x", "corrected", "")
+
+
+class StreamResponse(Response):
+    def __init__(self, body=b'', status=200, location=None):
+        self.content, self.status_code, self.closed = body, status, False
+        self.headers = {'Content-Type': 'application/pdf', **({'Location': location} if location else {})}
+
+    def iter_content(self, chunk_size):
+        yield self.content[:4]
+        yield self.content[4:]
+
+    def close(self):
+        self.closed = True
+
+
+def test_pdf_download_limits_bytes_and_does_not_cache_overflow(tmp_path, monkeypatch):
+    http = CachedHTTP(Store(tmp_path / 'cache.sqlite'))
+    response = StreamResponse(b'%PDF-exceeds-limit')
+    monkeypatch.setattr(http.session, 'get', lambda *a, **kw: response)
+    with pytest.raises(SourceError, match='download size limit'):
+        http.get('https://example.org/paper.pdf', max_bytes=5)
+    assert response.closed
+    assert not http.is_cached('https://example.org/paper.pdf')
+
+
+def test_pdf_redirect_is_checked_before_destination_request(tmp_path, monkeypatch):
+    http = CachedHTTP(Store(tmp_path / 'cache.sqlite'))
+    calls, checked = [], []
+    response = StreamResponse(status=302, location='http://localhost/private.pdf')
+    def get(url, **kwargs):
+        calls.append(url)
+        assert kwargs['allow_redirects'] is False
+        return response
+    def guard(url):
+        checked.append(url)
+        if 'localhost' in url:
+            raise SourceError('destination denied')
+    monkeypatch.setattr(http.session, 'get', get)
+    with pytest.raises(SourceError, match='destination denied'):
+        http.get('https://example.org/paper.pdf', max_bytes=100, request_guard=guard)
+    assert len(calls) == 1 and len(checked) == 2 and response.closed

@@ -10,6 +10,7 @@ import streamlit.components.v1 as components
 
 from kgmap.core import ROOT, stable_id
 from kgmap.graph import build_graph, filtered_snapshot, graph_view, researcher_path
+from kgmap.fulltext import document
 from kgmap.report import identity_rows, render_report
 from kgmap.store import Store
 from kgmap.visualisation import graph_html
@@ -23,7 +24,7 @@ h2,h3{letter-spacing:-.025em}div[data-testid="stMetric"]{background:#eff3ee;bord
 </style>""", unsafe_allow_html=True)
 
 
-def publication_details(p, mentions, concepts):
+def publication_details(p, mentions, concepts, context):
     st.markdown(f"**{p['title']}**")
     st.caption(f"{p.get('date') or 'Date unknown'} · " + ", ".join(a["name"] for a in p["authors"]))
     st.link_button("Open publication ↗", p["url"])
@@ -33,7 +34,20 @@ def publication_details(p, mentions, concepts):
     found = [m for m in mentions if m["owner"] == p["id"]]
     if found:
         st.dataframe(pd.DataFrame([{"Topic": concepts[m["concept"]]["label"], "Field": m["field"],
-                                  "Evidence": m["evidence"], "Method": m["method"], "Source": m["source"]} for m in found]), hide_index=True)
+                                  "Page": m.get("page"), "Evidence": m["evidence"], "Method": m["method"], "Source": m["source"]} for m in found]), hide_index=True)
+    doc = document(p)
+    with st.expander("Full text and page evidence"):
+        if doc:
+            st.caption(f"{doc['page_count']} PDF pages · {doc['body_word_count']:,} analysis words · {doc.get('version') or 'version not supplied'} · licence: {doc.get('license') or 'not specified by source'}")
+            page = st.selectbox("PDF page", [page["page"] for page in doc["pages"]], key="fullpage_" + context + p["id"])
+            selected_page = next(item for item in doc["pages"] if item["page"] == page)
+            st.link_button("Open source PDF at this page ↗", doc["source_url"].split("#")[0] + "#page=" + str(page))
+            st.text(selected_page["text"])
+            st.caption("Analysis omits detected bibliography content and repeated page headers. Formulas and reading order may be imperfect; extracted text is not a mathematical assertion.")
+        else:
+            st.caption("Full text: " + p.get("full_text", {}).get("status", "not yet retrieved") + ". A ready record also requires its local text cache.")
+            if p.get("full_text", {}).get("attempts"):
+                st.json(p["full_text"]["attempts"])
     with st.expander("Metadata and provenance"):
         st.json(p)
 
@@ -54,6 +68,14 @@ all_concepts = snapshot["concepts"]
 with st.sidebar:
     st.markdown("### Explore the sample")
     st.caption("Pilot 01 · Algebra & integrable systems")
+    include_full_text = st.toggle("Include available full text", value=snapshot.get("analysis", {}).get("include_full_text", True), key="include_full_text")
+    st.caption("Turn off to compare with the title, abstract and profile baseline.")
+    if include_full_text and not snapshot.get("analysis", {}).get("include_full_text", True):
+        from kgmap.concepts import extract_concepts
+        all_concepts, _ = extract_concepts(snapshot["publications"], snapshot["researchers"])
+    elif not include_full_text:
+        metadata_topics = {m["concept"] for m in snapshot["mentions"] if m["field"] != "full_text"}
+        all_concepts = {cid: c for cid, c in all_concepts.items() if cid in metadata_topics}
     focus = st.selectbox("Researcher", [None, *people], format_func=lambda x: "All researchers" if x is None else people[x]["name"], key="researcher_filter")
     concept = st.selectbox("Mathematical concept", [None, *sorted(all_concepts, key=lambda k: all_concepts[k]["label"].casefold())],
                            format_func=lambda x: "All concepts" if x is None else all_concepts[x]["label"], key="concept_filter")
@@ -73,13 +95,15 @@ with st.sidebar:
     st.caption("Collection is explicit; opening the app never calls research APIs.")
     st.code("python -m kgmap.cli collect", language="bash")
 
-visible = filtered_snapshot(snapshot, year_range, concept, focus, reviews)
+visible = filtered_snapshot(snapshot, year_range, concept, focus, reviews, include_full_text=include_full_text)
 graph = build_graph(visible, reviews)
 metrics = st.columns(4)
 metrics[0].metric("Researchers", sum(r["status"] == "verified" for r in people.values()))
 metrics[1].metric("Publications in view", len(visible["publications"]))
 metrics[2].metric("Mathematical topics", len(visible["concepts"]))
 metrics[3].metric("Abstract coverage", f"{sum(bool(p.get('abstract')) for p in visible['publications'])}/{len(visible['publications'])}")
+full_count = sum(bool(document(p)) for p in visible["publications"])
+st.caption(f"Full text cached for {full_count}/{len(visible['publications'])} publications in view · " + ("included in analysis" if include_full_text else "metadata analysis selected") + ". Unequal coverage affects score comparisons.")
 tabs = st.tabs(["Explore maps", "Candidate connections", "Publications", "Identity & sources", "Review"])
 
 with tabs[0]:
@@ -147,7 +171,7 @@ with tabs[1]:
             b.metric("Shared external collaborators", len(c["shared_collaborator_ids"]))
             st.dataframe(pd.DataFrame([{"Component": key.replace("_", " "), "Value": value,
                 "Weight": c["weights"][key], "Contribution": value * c["weights"][key]} for key, value in c["components"].items()]), hide_index=True)
-            st.caption("Shared concepts use IDF-weighted Jaccard. Related concepts use mean top-three co-occurrence scores; abstract similarity uses mean top-three independent TF-IDF comparisons. The intermediate path component uses the strongest two-hop concept path. Missing components contribute zero.")
+            st.caption("Shared concepts use IDF-weighted Jaccard. Related concepts use mean top-three co-occurrence scores; abstract and full-text similarity use separate mean top-three independent TF-IDF comparisons. Joint papers are excluded from both language signals. The intermediate path component uses the strongest two-hop concept path. Missing components contribute zero; weights are shown above.")
             st.write("Shared topics: " + (", ".join(visible["concepts"][cid]["label"] for cid in c["shared_concepts"]) or "None"))
             for bridge in c["related_concepts"]:
                 st.write(f"Candidate topic bridge: {visible['concepts'][bridge['left_concept']]['label']} ↔ {visible['concepts'][bridge['right_concept']]['label']} ({bridge['weight']:.3f})")
@@ -163,12 +187,22 @@ with tabs[1]:
                 st.write(f"Cosine similarity {pair['similarity']:.3f}")
                 st.link_button(p["title"], p["url"])
                 st.link_button(q["title"], q["url"])
+            if c.get("full_text_pairs"):
+                st.markdown("**Most similar independent full-text pairs**")
+                for pair in c["full_text_pairs"]:
+                    p, q = pub_lookup[pair["left"]], pub_lookup[pair["right"]]
+                    st.write(f"Full-text cosine similarity {pair['similarity']:.3f}")
+                    st.link_button(p["title"], p["full_text"]["source_url"])
+                    st.link_button(q["title"], q["full_text"]["source_url"])
+                st.caption("This compares extracted paper bodies, excluding detected references. It is language evidence, not proof of a mathematical relationship.")
+            if any(c.get("full_text_coverage", {}).values()):
+                st.caption("Full-text coverage for this pair: " + "; ".join(people[rid]["name"] + ": " + str(n) for rid, n in c["full_text_coverage"].items()))
             st.markdown("**Supporting publications and extraction evidence**")
             options = c["supporting_publications"]
             if options:
                 pid = st.selectbox("Inspect supporting publication", options,
                     format_func=lambda key: pub_lookup[key]["title"], key="support_" + c["id"])
-                publication_details(pub_lookup[pid], visible["mentions"], visible["concepts"])
+                publication_details(pub_lookup[pid], visible["mentions"], visible["concepts"], "support_" + c["id"])
             st.info(c["uncertainty"])
             decision = reviews.get(c["id"], {})
             st.caption("Review: " + decision.get("status", "unreviewed") + (" · " + decision["note"] if decision.get("note") else ""))
@@ -176,15 +210,16 @@ with tabs[1]:
 
 with tabs[2]:
     st.subheader("Publication evidence")
-    query = st.text_input("Search titles, abstracts or authors")
+    query = st.text_input("Search titles, abstracts, authors or cached full text")
+    from kgmap.fulltext import body_text
     records = [p for p in visible["publications"] if not query or query.casefold() in
-               (p["title"] + " " + p.get("abstract", "") + " " + " ".join(a["name"] for a in p["authors"])).casefold()]
+               (p["title"] + " " + p.get("abstract", "") + " " + " ".join(a["name"] for a in p["authors"]) + " " + body_text(p)).casefold()]
     if records:
-        st.dataframe(pd.DataFrame([{"Title": p["title"], "Date": p["date"], "Abstract": bool(p["abstract"]),
+        st.dataframe(pd.DataFrame([{"Title": p["title"], "Date": p["date"], "Abstract": bool(p["abstract"]), "Full text": bool(document(p)),
             "Researchers": ", ".join(people[rid]["name"] for rid in p["researcher_ids"]), "DOI": p["doi"], "Source": p["url"]} for p in records]),
             hide_index=True, use_container_width=True, column_config={"Source": st.column_config.LinkColumn("Source")})
         pid = st.selectbox("Publication details", [p["id"] for p in records], format_func=lambda key: pub_lookup[key]["title"])
-        publication_details(pub_lookup[pid], visible["mentions"], visible["concepts"])
+        publication_details(pub_lookup[pid], visible["mentions"], visible["concepts"], "publication_")
     else:
         st.info("No publications match.")
 
@@ -201,7 +236,20 @@ with tabs[3]:
             st.json(r)
     providers = Counter(s["provider"] for p in snapshot["publications"] for s in p["provenance"])
     st.write("Publication provenance records: " + ", ".join(f"{k}: {v}" for k, v in sorted(providers.items())))
-    events = snapshot.get("collection", {}).get("requests", [])
+    full_run = snapshot.get("collection", {}).get("full_text", {})
+    with st.expander("Full-text retrieval coverage"):
+        st.write("Usable text is cached locally for " + str(sum(bool(document(p)) for p in snapshot["publications"])) + " papers.")
+        if full_run:
+            st.caption(f"Latest run: {full_run['attempted']} papers selected by researcher round robin; "
+                       + ", ".join(f"{k}: {v}" for k, v in full_run.get("status_counts", {}).items()) + ".")
+        attempted = [p for p in snapshot["publications"] if p.get("full_text")]
+        if attempted:
+            st.dataframe(pd.DataFrame([{"Title": p["title"], "Status": p["full_text"]["status"],
+                "Local text available": bool(document(p)), "Pages": p["full_text"].get("page_count"),
+                "Analysis words": p["full_text"].get("body_word_count"),
+                "Issues": " ; ".join(a["error"] for a in p["full_text"].get("attempts", []))} for p in attempted]), hide_index=True)
+        st.caption("Public source links only; coverage depends on access and extraction quality. PDF text can lose mathematical notation and reading order.")
+    events = [*snapshot.get("collection", {}).get("requests", []), *full_run.get("requests", [])]
     stale = [e for e in events if e["status"] == "stale_cache"]
     if stale:
         st.warning(f"{len(stale)} requests used explicitly recorded stale cached responses.")
@@ -231,7 +279,7 @@ with tabs[3]:
                 st.divider()
     with st.expander("HTTP request and cache log"):
         st.dataframe(pd.DataFrame(events), hide_index=True)
-    st.caption("OpenAlex metadata are CC0. Other source content and abstracts retain their source licences; cached content is for local analysis. No full-text scraping or paid AI service is used.")
+    st.caption("OpenAlex metadata are CC0. Abstracts and public PDFs retain their source licences; full-text files are cached locally. No paid AI service is used.")
 
 with tabs[4]:
     st.subheader("Mathematician review")

@@ -13,19 +13,19 @@ from .sources import (IdentityError, corroborate_authorships, deduplicate, enric
 log = logging.getLogger(__name__)
 
 
-def analyse(researchers, publications, metadata=None):
+def analyse(researchers, publications, metadata=None, include_full_text=True):
     title_groups = defaultdict(list)
     for p in publications:
         title_groups[normalise(p["title"])].append(p["id"])
     metadata = dict(metadata or {})
     metadata["possible_duplicate_title_groups"] = [ids for ids in title_groups.values() if len(ids) > 1]
-    concepts, mentions = extract_concepts(publications, researchers)
+    concepts, mentions = extract_concepts(publications, researchers, include_full_text=include_full_text)
     relations = related_concepts(concepts, mentions)
-    connections = discover_connections(researchers, publications, concepts, mentions, relations)
+    connections = discover_connections(researchers, publications, concepts, mentions, relations, include_full_text=include_full_text)
     return {"schema_version": 1, "generated_at": utcnow(), "data_kind": "retrieved_public_metadata",
             "researchers": researchers, "publications": publications, "concepts": concepts,
             "mentions": mentions, "concept_relations": relations, "connections": connections,
-            "collection": metadata}
+            "collection": metadata, "analysis": {"include_full_text": include_full_text}}
 
 
 def collect(config, http, skip_enrichment=False):
@@ -83,6 +83,8 @@ def collect(config, http, skip_enrichment=False):
                     issues.append({"publication": p["id"], "stage": provider, "error": str(exc)})
         publications = deduplicate(publications)
     issues.extend(corroborate_authorships(publications, researchers))
+    from .fulltext import restore_cached_text
+    restore_cached_text(publications)
     return analyse(researchers, publications, {"counts_before_deduplication": counts,
         "requested_per_researcher": config["collection"].get("max_publications", 40),
         "enrichment_skipped": skip_enrichment, "issues": issues, "requests": http.events})

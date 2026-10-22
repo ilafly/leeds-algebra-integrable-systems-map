@@ -14,7 +14,7 @@ def weighted_jaccard(a, b, weights):
     return sum(weights[c] for c in a & b) / sum(weights[c] for c in union) if union else 0
 
 
-def discover_connections(researchers, publications, concepts, mentions, related):
+def discover_connections(researchers, publications, concepts, mentions, related, include_full_text=True):
     verified = [r for r in researchers if r.get("status") == "verified"]
     profiles = {r["id"]: set() for r in verified}
     papers = {r["id"]: [p for p in publications if r["id"] in p["researcher_ids"] and not p.get("is_retracted") and not p.get("quarantined")] for r in verified}
@@ -32,6 +32,11 @@ def discover_connections(researchers, publications, concepts, mentions, related)
     concept_weights = {c: 1 + math.log((1 + len(verified)) / (1 + sum(c in v for v in profiles.values()))) for c in concepts}
     all_papers = [p for p in publications if p.get("abstract") and not p.get("is_retracted") and not p.get("quarantined")]
     vectors = dict(zip([p["id"] for p in all_papers], tfidf_vectors([p["abstract"] for p in all_papers])))
+    from .fulltext import body_text
+    full_texts = {p["id"]: body_text(p) for p in publications if include_full_text and not p.get("quarantined") and not p.get("is_retracted")}
+    full_texts = {pid: text for pid, text in full_texts.items() if text}
+    full_vectors = dict(zip(full_texts, tfidf_vectors(list(full_texts.values()))))
+    weights = {**{k: round(v * 0.8, 2) for k, v in WEIGHTS.items()}, "full_text_similarity": 0.2} if full_vectors else WEIGHTS
     related_by_pair = {tuple(sorted([e["source_id"], e["target_id"]])): e for e in related}
     adjacency = {}
     for e in related:
@@ -51,6 +56,9 @@ def discover_connections(researchers, publications, concepts, mentions, related)
                                  and p["id"] not in joint and q["id"] not in joint
                                  and p["id"] in vectors and q["id"] in vectors],
                                 key=lambda x: (-x["similarity"], x["left"], x["right"]))[:3]
+        full_pairs = sorted([{"left": p["id"], "right": q["id"], "similarity": round(cosine(full_vectors[p["id"]], full_vectors[q["id"]]), 4)}
+            for p in ap for q in bp if p["id"] != q["id"] and p["id"] not in joint and q["id"] not in joint
+            and p["id"] in full_vectors and q["id"] in full_vectors], key=lambda x: (-x["similarity"], x["left"], x["right"]))[:3]
         bridges = []
         for ca in ac - shared:
             for cb in bc - shared:
@@ -78,20 +86,25 @@ def discover_connections(researchers, publications, concepts, mentions, related)
                       "related_concepts": sum(x["weight"] for x in bridges[:3]) / len(bridges[:3]) if bridges else 0,
                       "abstract_similarity": sum(x["similarity"] for x in abstract_pairs) / len(abstract_pairs) if abstract_pairs else 0,
                       "intermediate_concepts": intermediate[0]["weight"] if intermediate else 0}
-        score = sum(components[k] * weight for k, weight in WEIGHTS.items())
+        if full_vectors:
+            components["full_text_similarity"] = sum(x["similarity"] for x in full_pairs) / len(full_pairs) if full_pairs else 0
+        score = sum(components[k] * weight for k, weight in weights.items())
         evidence_ids = {p["id"] for p in ap + bp if pub_concepts.get(p["id"], set()) & shared}
         evidence_ids.update(pid for x in bridges[:5] for pid in x["publication_ids"])
         evidence_ids.update(pid for x in intermediate[:3] for pid in x["publication_ids"])
         evidence_ids.update(pid for pair in abstract_pairs for pid in [pair["left"], pair["right"]])
+        evidence_ids.update(pid for pair in full_pairs for pid in [pair["left"], pair["right"]])
         shared_labels = [concepts[c]["label"] for c in sorted(shared)]
         results.append({"id": stable_id("connection", *sorted([aid, bid])), "researcher_a": aid, "researcher_b": bid,
-            "score": round(score, 4), "components": {k: round(v, 4) for k, v in components.items()}, "weights": WEIGHTS,
+            "score": round(score, 4), "components": {k: round(v, 4) for k, v in components.items()}, "weights": weights,
             "shared_concepts": sorted(shared), "related_concepts": bridges[:5], "intermediate_paths": intermediate[:3],
             "abstract_pairs": abstract_pairs, "joint_publications": joint, "shared_collaborator_ids": common_collaborators,
+            "full_text_pairs": full_pairs, "full_text_coverage": {aid: sum(p["id"] in full_vectors for p in ap), bid: sum(p["id"] in full_vectors for p in bp)},
             "supporting_publications": sorted(evidence_ids), "status": "candidate", "review_status": "unreviewed",
-            "method": "idf_weighted_topic_jaccard+cooccurrence+abstract_tfidf+two_hop_paths",
-            "uncertainty": "Exploratory candidate; score is a ranking heuristic, not a calibrated probability. Missing abstracts and the publication sample affect it. No joint publications means none in this sample.",
+            "method": "idf_weighted_topic_jaccard+cooccurrence+abstract_tfidf+two_hop_paths" + ("+full_text_tfidf" if full_vectors else ""),
+            "uncertainty": "Exploratory candidate; score is a ranking heuristic, not a calibrated probability. Missing abstracts, unequal full-text coverage and PDF extraction errors affect it. Topic mentions can describe background work rather than expertise. No joint publications means none in this sample.",
             "explanation": f"{len(shared)} shared extracted topics" + (": " + ", ".join(shared_labels[:8]) if shared_labels else "")
                 + f"; {len(bridges)} nonidentical topic bridges; {len(abstract_pairs)} independent abstract pairs scored. "
+                + (f"{len(full_pairs)} independent full-text pairs scored. " if full_vectors else "")
                 + (f"{len(joint)} joint publications in this sample." if joint else "No joint publications in this sample; this candidate is based on mathematical proximity.")})
     return sorted(results, key=lambda x: (-x["score"], x["id"]))

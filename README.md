@@ -4,7 +4,9 @@ A working local research prototype for finding evidence-based mathematical conne
 
 The included dataset uses **453 publication records in discovery, 395 with abstracts**, collected through verified identities, OpenAlex, ORCID, Crossref and arXiv. A total of 480 identifier-deduplicated records are retained; 27 are quarantined pending independent authorship corroboration. The system scores all 105 researcher pairs. The [evidence report](reports/discovered_connections.md) contains the current topic count, coverage, possible duplicate versions and uncertainty. Fourteen ORCIDs are independently corroborated; Oleg Chalykh's ORCID remains explicitly labelled OpenAlex-reported. The roster includes former and joint affiliations and is not a current Leeds employment directory.
 
-Validation includes ingestion and Unicode name safeguards, graph construction, filters, persistent reviews, batched metadata lookup and exclusion of uncorroborated authorship. The actual Streamlit app executes all three map views with the expanded dataset and filters for the new researchers. Its original HTTP health check returned `ok`. Canvas rendering and physical graph clicks have not been visually verified.
+Full-text analysis adds page-linked topic evidence and a separate body-text similarity signal. The first balanced sample of **30 attempted papers** yielded **28 usable PDFs, covering all 15 researchers and 842 pages**, with 156 page-linked topic mentions. Successful coverage and the two access failures are listed in the [evidence report](reports/discovered_connections.md). PDFs and extracted pages remain local in `data/fulltext/`, outside Git. The app can switch back to the title, abstract and profile baseline.
+
+Validation includes ingestion and Unicode name safeguards, graph construction, filters, persistent reviews, batched metadata lookup, PDF extraction safeguards and exclusion of uncorroborated authorship. The actual Streamlit app executes all three map views with the expanded dataset and filters for the new researchers. Its original HTTP health check returned `ok`. Canvas rendering and physical graph clicks have not been visually verified.
 
 ## Launch
 
@@ -17,7 +19,7 @@ python -m pip install -r requirements.txt
 python -m streamlit run app.py
 ```
 
-Open **http://127.0.0.1:8501**. The included `data/snapshot.json` is a real, retrieved dataset, so the application works without research API access. On this machine the required libraries are already installed and `python3 -m streamlit run app.py` also works directly. The app binds to loopback and does not collect metadata on page load.
+Open **http://127.0.0.1:8501**. The included `data/snapshot.json` is a real, retrieved dataset, so the application works without research API access. Full-text evidence additionally requires its local `data/fulltext/` cache; a checkout without that cache automatically recomputes the app view from available metadata. Use the virtual environment for PDF extraction, which requires `pypdf`. The app binds to loopback and does not collect metadata on page load.
 
 ## Collect and reproduce
 
@@ -37,6 +39,15 @@ python -m kgmap.cli collect --refresh
 # Rebuild the vocabulary extraction, graph inputs and report without network access.
 python -m kgmap.cli analyse
 
+# Fetch a balanced sample of 30 public PDFs, extract text and rebuild the analysis.
+python -m kgmap.cli fulltext --max-papers 30
+
+# Attempt every candidate with a source-supplied open-access PDF link or arXiv ID.
+python -m kgmap.cli fulltext --max-papers 0
+
+# Rebuild the title/abstract/profile baseline; cached PDFs remain available.
+python -m kgmap.cli analyse --metadata-only
+
 # Repeat collection using only previously cached responses.
 python -m kgmap.cli collect --offline
 
@@ -48,7 +59,11 @@ python -m pytest -q
 
 Commands are independent and may be rerun. Use `--config PATH`, `--database PATH`, and `--limit N` to control the pilot. A collection with no publications preserves the previous snapshot and writes `data/collection_attempt.json`. Exit codes: 0 success, 1 no publications, 2 partial collection with unresolved identities. Source failures during supplementary enrichment are reported without discarding retrieved records.
 
-If OpenAlex requires a free API key in your environment, set `OPENALEX_API_KEY` as an environment variable. The collector works without a key when anonymous access is available. Keys are excluded from cached URLs, provenance and logs. You can set a contact address in `[collection]` for the descriptive user agent. Requests use certificate verification, timeouts, per-host pacing and bounded retries; arXiv requests are at least 3.1 seconds apart. Uncached arXiv IDs are queried in batches of up to 25, while existing individual responses remain reusable. Public page retrieval checks robots.txt. Never disable TLS verification to work around a local certificate configuration problem.
+If OpenAlex requires a free API key in your environment, set `OPENALEX_API_KEY` as an environment variable. The collector works without a key when anonymous access is available. Keys are excluded from cached URLs, provenance and logs. You can set a contact address in `[collection]` for the descriptive user agent. Requests use certificate verification, timeouts, per-host pacing and bounded retries; arXiv metadata requests are at least 3.1 seconds apart. Uncached arXiv IDs are queried in batches of up to 25, while existing individual responses remain reusable. Public page and PDF retrieval check robots.txt; PDF requests respect its crawl delay, currently 15 seconds on arXiv. Never disable TLS verification to work around a local certificate configuration problem.
+
+The full-text stage uses OpenAlex's source-supplied open-access PDF locations and exact arXiv identifiers already attached to verified publications. It skips quarantined and retracted records and tries at most three locations per selected paper. There is no paywall bypass or name-based paper matching. Attempts are selected round robin, recent first, without choosing a joint record twice. A balance of attempts cannot guarantee equal successful coverage. `[full_text]` configures the default sample and limits (20 MB, 200 pages, at least 200 body words). Oversized papers are reported rather than silently truncated.
+
+`pypdf` extracts every page and corroborates the title against the first two pages. The analysis removes detected reference sections, subsequent content and repeated short headers; original page text is retained for inspection. Image-only or very sparse extractions are marked `needs_ocr_or_review` and excluded. No OCR runs automatically. PDF reading order, formulas, word spacing and undetected bibliographies remain limitations. Each ready document records its source, version/licence when supplied, SHA-256, extraction method and retrieval times. Existing successful artifacts are reused without network access and retained across metadata refreshes; `fulltext --refresh` retries their sources. `--offline` uses only cached responses and artifacts.
 
 ## Explore
 
@@ -58,7 +73,8 @@ If OpenAlex requires a free API key in your environment, set `OPENALEX_API_KEY` 
 - Click a graph node or edge to inspect its full record and source links in the panel beneath the graph. Drag nodes and scroll to zoom. The dropdown inspector also lists a researcher's topics or the researchers associated with a topic.
 - Filter by researcher, concept, publication year, relationship type and candidate threshold. Publication filters **recompute** topic associations and researcher scores. Dated views omit undated profile descriptions and undated papers.
 - Select two researchers to highlight an evidence-bearing path. Use the integrated map to see the complete path. The search honours the visible relationship types, date range, threshold and rejected reviews, and excludes the direct thematic shortcut.
-- The **Candidate connections** tab gives score components, topic bridges, abstract pairs, supporting publications, links and uncertainty.
+- The **Candidate connections** tab gives score components, topic bridges, abstract and full-text pairs, supporting publications, links and uncertainty. Full-text coverage is shown for each pair.
+- **Publications** searches cached body text as well as metadata. Open **Full text and page evidence** to read extracted pages and follow a page-specific source PDF link. The sidebar's **Include available full text** toggle recomputes the graph and scores for comparison with the metadata baseline.
 - **Identity & sources** shows identity decisions, rejected namesakes, provider failures and HTTP cache use.
 - **Review** accepts, rejects or annotates corrections to researcher candidates, concept associations and text extractions. Rejected text extractions and associations are excluded before scores are recomputed. Review decisions remain in SQLite across refreshes. A correction note preserves the original edge for audit; reject it to exclude it, or change the vocabulary and reanalyse to correct terminology.
 
@@ -87,7 +103,9 @@ The transparent thematic ranking is:
 + 0.10 × strongest 2-hop concept path through an intermediate concept
 ```
 
-TF-IDF uses unigrams and bigrams, log term frequencies, smoothed IDF and L2 normalisation. Joint publications are excluded from abstract comparisons so they do not inflate the independent language signal. Missing components contribute zero; weights are not renormalised. Shared collaborators use stable author IDs and are reported as social evidence separately from thematic ranking. Coauthorship is not included in the mathematical score.
+When full text is enabled and the visible sample contains usable local text, the four baseline weights are multiplied by 0.8 and a fifth component receives weight **0.20 × mean of strongest 3 independent body-text TF-IDF cosines**. This gives weights 0.32 / 0.16 / 0.24 / 0.08 / 0.20. Full-text topic mentions also extend the concept evidence. The app and report show the weights actually used; samples without full text use the original baseline.
+
+TF-IDF uses unigrams and bigrams, log term frequencies, smoothed IDF and L2 normalisation, with separate corpora for abstracts and paper bodies. Joint publications are excluded from both language comparisons so they do not inflate the independent language signal. Missing components contribute zero; weights are not renormalised, so unequal full-text coverage affects rankings. Topic matches in background discussion are not proof of expertise. Shared collaborators use stable author IDs and are reported as social evidence separately from thematic ranking. Coauthorship is not included in the mathematical score.
 
 This is an exploratory ranking, **not** a probability, mathematical implication or novelty assessment. `RELATED_TO` records only candidate co-occurrence. `GENERALISES`, `SPECIAL_CASE_OF` and `USES_METHOD` are reserved for explicit supported mathematical assertions; this pilot does not infer them from similarity. Acceptance records a review decision and never relabels a candidate as a theorem. Numeric extraction confidence is an uncalibrated reliability hint. Recurring terminology, incomplete abstracts, a small sample and provider clustering errors affect the results.
 
@@ -131,6 +149,7 @@ config/vocabulary.json           Terminology aliases; no predefined relationship
 kgmap/cli.py                     Reproducible collection / analysis / report commands
 kgmap/sources.py                 Profile, OpenAlex, ORCID, Crossref, arXiv and deduplication
 kgmap/http.py                    Paced, retrying HTTP with SQLite cache and provenance log
+kgmap/fulltext.py                Public PDF retrieval, title checks and page-aware extraction
 kgmap/concepts.py                Phrase extraction, normalisation and TF-IDF
 kgmap/connections.py             Explained candidate ranking and collaboration evidence
 kgmap/graph.py                   NetworkX graph, filtered recomputation and evidence paths
@@ -138,11 +157,12 @@ kgmap/store.py                   SQLite cache, snapshot and persistent reviews
 kgmap/visualisation.py           Offline-capable interactive graph rendering
 data/snapshot.json               Portable real-data snapshot
 data/map.sqlite                  Local cache and reviews (Git ignored)
+data/fulltext/                   Original PDFs and page text JSON (local, Git ignored)
 reports/researcher_identities.csv Identity verification table
 reports/discovered_connections.md Automatically generated evidence report and source issues
 tests/                          Synthetic unit fixtures only; not demonstration app data
 ```
 
-Metadata provenance includes source/provider, fields and processing timestamps. The snapshot's collection request log records actual HTTP retrieval/cache timestamps and any use of stale cached responses. Publication dates come from providers; a preprint and journal manifestation may have different dates. Matching-title records without a shared reliable identifier remain separate and are flagged for version review in the report and source tab. Publication and coauthorship counts therefore count records and may include unlinked versions. OpenAlex metadata are CC0; abstracts and other source content retain their respective licences. This local pilot does not download full papers. Review source terms before redistributing cached abstracts or expanding collection substantially.
+Metadata provenance includes source/provider, fields and processing timestamps. The snapshot's collection request log records actual HTTP retrieval/cache timestamps and any use of stale cached responses. Publication dates come from providers; a preprint and journal manifestation may have different dates. Matching-title records without a shared reliable identifier remain separate and are flagged for version review in the report and source tab. Publication and coauthorship counts therefore count records and may include unlinked versions. OpenAlex metadata are CC0; abstracts and public PDFs retain their respective licences. Whole-paper text is kept out of the portable snapshot and exported report; source terms govern redistribution of cached content.
 
 The next development priorities are manual scientific evaluation, improved handling of split/contaminated author clusters and preprint versions, reviewed explicit mathematical assertions, and better extraction of mathematical notation. Current extraction can miss LaTeX-heavy phrases and does not resolve negation or prove mathematical relationships.
