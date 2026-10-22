@@ -2,6 +2,7 @@ from streamlit.testing.v1 import AppTest
 
 from kgmap.pipeline import analyse
 from kgmap.store import Store
+from kgmap.graph import build_graph
 from conftest import paper
 
 
@@ -38,3 +39,19 @@ def test_review_form_persists_in_separate_test_database(tmp_path, monkeypatch, r
     decisions = store.reviews()
     assert len(decisions) == 1
     assert next(iter(decisions.values()))["status"] == "rejected"
+
+
+def test_relationship_inspector_obeys_map_view_and_type_filters(tmp_path, monkeypatch, researchers):
+    at, store = app_with_fixture(tmp_path, monkeypatch, researchers)
+    graph = build_graph(store.load())
+    association = next(e['id'] for *_, e in graph.edges(data=True) if e['type'] == 'RELATED_TO')
+    at.toggle(key='edge_labels').set_value(True).run()
+    at.selectbox(key='edge_inspector').set_value(association).run()
+    assert not at.exception
+    assert any('Calculation:' in x.value and '√' in x.value for x in at.markdown)
+    at.radio(key='map_view').set_value('Researcher network').run()
+    assert not at.exception
+    assert at.selectbox(key='edge_inspector').value != association
+    next(x for x in at.multiselect if x.label == 'Relationship types').set_value(['AUTHORED']).run()
+    assert not at.exception
+    assert any('No relationships pass' in x.value for x in at.caption)

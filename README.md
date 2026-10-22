@@ -70,7 +70,9 @@ The full-text stage uses OpenAlex's source-supplied open-access PDF locations an
 - **Knowledge map:** concept nodes and dashed candidate co-occurrence edges. A vocabulary match identifies terminology, not a theorem.
 - **Researcher network:** solid green coauthorship and separate dashed purple thematic proximity edges.
 - **Integrated map:** researchers, publications and concepts joined through the original metadata and text evidence.
-- Click a graph node or edge to inspect its full record and source links in the panel beneath the graph. Drag nodes and scroll to zoom. The dropdown inspector also lists a researcher's topics or the researchers associated with a topic.
+- Hover over a graph link for its meaning, score and review status. Click it to see a readable explanation, supporting paper titles, source excerpts with PDF page links, and the calculation behind its score. Concept associations explain their publication counts and normalisation; researcher candidates show weighted components, shared topics, bridges and independent paper comparisons. Raw records and provenance remain available in a disclosure beneath the explanation.
+- Turn on **Show relationship labels** to put relationship names, paper counts or candidate scores on the links. Dense maps start with labels off. **Inspect a relationship** provides a searchable selector for exactly the links in the current map, respecting date, researcher, concept, relationship-type, score and review filters. It initially shows five supporting papers; **Show all supporting papers** expands the complete set.
+- Click a node to inspect its record and source links. Drag nodes and scroll to zoom. The node dropdown also lists a researcher's topics or the researchers associated with a topic.
 - Filter by researcher, concept, publication year, relationship type and candidate threshold. Publication filters **recompute** topic associations and researcher scores. Dated views omit undated profile descriptions and undated papers.
 - Select two researchers to highlight an evidence-bearing path. Use the integrated map to see the complete path. The search honours the visible relationship types, date range, threshold and rejected reviews, and excludes the direct thematic shortcut.
 - The **Candidate connections** tab gives score components, topic bridges, abstract and full-text pairs, supporting publications, links and uncertainty. Full-text coverage is shown for each pair.
@@ -155,6 +157,8 @@ kgmap/connections.py             Explained candidate ranking and collaboration e
 kgmap/graph.py                   NetworkX graph, filtered recomputation and evidence paths
 kgmap/store.py                   SQLite cache, snapshot and persistent reviews
 kgmap/visualisation.py           Offline-capable interactive graph rendering
+kgmap/inspection.py              Source-grounded relationship explanations and score details
+kgmap/inspection.js              Safe, structured graph click inspector
 data/snapshot.json               Portable real-data snapshot
 data/map.sqlite                  Local cache and reviews (Git ignored)
 data/fulltext/                   Original PDFs and page text JSON (local, Git ignored)

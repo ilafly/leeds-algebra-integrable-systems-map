@@ -11,6 +11,7 @@ import streamlit.components.v1 as components
 from kgmap.core import ROOT, stable_id
 from kgmap.graph import build_graph, filtered_snapshot, graph_view, researcher_path
 from kgmap.fulltext import document
+from kgmap.inspection import EdgeInspector, FIELD_LABELS, RELATION_LABELS, safe_source_url
 from kgmap.report import identity_rows, render_report
 from kgmap.store import Store
 from kgmap.visualisation import graph_html
@@ -50,6 +51,57 @@ def publication_details(p, mentions, concepts, context):
                 st.json(p["full_text"]["attempts"])
     with st.expander("Metadata and provenance"):
         st.json(p)
+
+
+def relationship_details(info, edge):
+    st.markdown("**" + info["title"] + "**")
+    st.caption(f"{info['label']} · {info['status']} · review: {info['review']}")
+    st.write(info["summary"])
+    st.caption(info["meaning"])
+    if info["review_note"]:
+        st.write("Reviewer note: " + info["review_note"])
+    if info["metric"]:
+        metric = info["metric"]
+        st.write(f"{metric['label']}: **{metric['value']:.3f}**")
+        st.caption(metric["note"])
+    for fact in info["facts"]:
+        st.write(f"{fact['label']}: {fact['value']}")
+    if info["shared_topics"]:
+        st.write("Shared topics: " + ", ".join(info["shared_topics"]))
+    if info["components"]:
+        st.dataframe(pd.DataFrame([{"Component": c["label"], "Value": c["value"], "Weight": c["weight"],
+            "Contribution": c["contribution"], "Calculation": c["explanation"]} for c in info["components"]]), hide_index=True)
+    for title, items in [("Candidate topic bridge", info["bridges"]), ("Intermediate path", info["paths"])]:
+        for item in items:
+            st.write(title + ": " + item)
+    for pair in info["comparisons"]:
+        st.caption(f"{pair['label']} · cosine similarity {pair['similarity']:.3f}")
+        for side in ("left", "right"):
+            if safe_source_url(pair[side]["url"]):
+                st.link_button(pair[side]["title"], pair[side]["url"])
+
+    def show_excerpt(item):
+        st.caption(item["topic"] + " · " + item["field"] + (f" · PDF page {item['page']}" if item["page"] else ""))
+        st.text(item["text"])
+        if safe_source_url(item["url"]):
+            st.link_button("Read this source" + (f" at page {item['page']}" if item["page"] else ""), item["url"])
+
+    if info["excerpt"]:
+        show_excerpt(info["excerpt"])
+    if info["publications"]:
+        st.markdown(f"**Supporting publications ({len(info['publications'])} of {info['publication_count']})**")
+        for paper in info["publications"]:
+            if safe_source_url(paper["url"]):
+                st.link_button(paper["title"], paper["url"])
+            st.caption((paper["date"] or "Date unknown") + (" · " + paper["notes"] if paper["notes"] else ""))
+            for item in paper["excerpts"]:
+                show_excerpt(item)
+    st.caption("How this link was created: " + info["method"])
+    with st.expander("Original relationship record and provenance"):
+        for url in info["sources"]:
+            if safe_source_url(url):
+                st.link_button(url, url)
+        st.json(edge)
 
 
 store = Store()
@@ -131,11 +183,35 @@ with tabs[0]:
                 '<span style="color:#176B63">━━ Coauthorship</span><span style="color:#9A79B6">┄┄ Thematic candidate</span>'
                 '<span style="color:#B2823C">┄┄ Concept association</span><span>Thin solid: source text / authorship</span><span>Red: selected path</span></div>', unsafe_allow_html=True)
     shown = graph_view(graph, view, threshold, selected_types)
+    show_edge_labels = st.toggle("Show relationship labels", value=False, key="edge_labels",
+                                 help="Adds relationship names, paper counts or candidate scores to the links. Dense maps are easier to read with labels off.")
     if shown.number_of_nodes():
-        components.html(graph_html(shown, path), height=710, scrolling=False)
-        st.caption(f"{shown.number_of_nodes()} nodes · {shown.number_of_edges()} edges. Click an edge to inspect its source, extraction method and review decision.")
+        components.html(graph_html(shown, path, snapshot=visible, show_edge_labels=show_edge_labels), height=850, scrolling=False)
+        st.caption(f"{shown.number_of_nodes()} nodes · {shown.number_of_edges()} edges. Hover over a link for a summary; click for an explanation, paper excerpts and score details.")
     else:
         st.info("No nodes match these filters. Lower the threshold or broaden the sample.")
+    with st.expander("Inspect a relationship"):
+        edge_options = {key: (a, b, data) for a, b, key, data in shown.edges(keys=True, data=True)}
+        if edge_options:
+            inspector = EdgeInspector(visible, shown)
+            def relationship_label(key):
+                a, b, edge = edge_options[key]
+                suffix = " · " + FIELD_LABELS.get(edge["field"], edge["field"]) if edge.get("field") else ""
+                if edge.get("page"):
+                    suffix += f" p. {edge['page']}"
+                if edge.get("status") == "candidate":
+                    suffix += f" · {edge['confidence']:.3f}"
+                return f"{inspector.label(a)} — {RELATION_LABELS.get(edge['type'], edge['type'])} — {inspector.label(b)}{suffix}"
+            selected_edge = st.selectbox("Relationship", sorted(edge_options, key=relationship_label),
+                                         format_func=relationship_label, key="edge_inspector")
+            a, b, edge = edge_options[selected_edge]
+            info = inspector.describe(a, b, edge)
+            if info["publication_count"] > len(info["publications"]):
+                if st.toggle("Show all supporting papers", key="edge_all_papers"):
+                    info = inspector.describe(a, b, edge, limit=None)
+            relationship_details(info, edge)
+        else:
+            st.caption("No relationships pass the current map filters.")
     with st.expander("Inspect a researcher or concept"):
         inspectable = [n for n, d in graph.nodes(data=True) if d["kind"] != "publication"]
         if inspectable:
