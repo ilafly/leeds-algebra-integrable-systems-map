@@ -6,7 +6,15 @@ from itertools import combinations
 from .concepts import cosine, tfidf_vectors
 from .core import normalise, stable_id
 
-WEIGHTS = {"shared_concepts": 0.40, "related_concepts": 0.20, "abstract_similarity": 0.30, "intermediate_concepts": 0.10}
+SCORING_VERSION = "shared-topics-v2"
+WEIGHTS = {"shared_concepts": 0.60, "related_concepts": 0.15, "abstract_similarity": 0.20, "intermediate_concepts": 0.05}
+FULL_TEXT_WEIGHTS = {"shared_concepts": 0.55, "related_concepts": 0.15, "abstract_similarity": 0.15,
+                     "intermediate_concepts": 0.05, "full_text_similarity": 0.10}
+
+
+def thematic_candidate(connection, threshold=0.0):
+    """Shared extracted terminology is required even when other signals score well."""
+    return bool(connection.get("shared_concepts")) and connection["score"] > 0 and connection["score"] >= threshold
 
 
 def weighted_jaccard(a, b, weights):
@@ -36,7 +44,7 @@ def discover_connections(researchers, publications, concepts, mentions, related,
     full_texts = {p["id"]: body_text(p) for p in publications if include_full_text and not p.get("quarantined") and not p.get("is_retracted")}
     full_texts = {pid: text for pid, text in full_texts.items() if text}
     full_vectors = dict(zip(full_texts, tfidf_vectors(list(full_texts.values()))))
-    weights = {**{k: round(v * 0.8, 2) for k, v in WEIGHTS.items()}, "full_text_similarity": 0.2} if full_vectors else WEIGHTS
+    weights = FULL_TEXT_WEIGHTS if full_vectors else WEIGHTS
     related_by_pair = {tuple(sorted([e["source_id"], e["target_id"]])): e for e in related}
     adjacency = {}
     for e in related:
@@ -97,6 +105,7 @@ def discover_connections(researchers, publications, concepts, mentions, related,
         shared_labels = [concepts[c]["label"] for c in sorted(shared)]
         results.append({"id": stable_id("connection", *sorted([aid, bid])), "researcher_a": aid, "researcher_b": bid,
             "score": round(score, 4), "components": {k: round(v, 4) for k, v in components.items()}, "weights": weights,
+            "scoring_version": SCORING_VERSION,
             "shared_concepts": sorted(shared), "related_concepts": bridges[:5], "intermediate_paths": intermediate[:3],
             "abstract_pairs": abstract_pairs, "joint_publications": joint, "shared_collaborator_ids": common_collaborators,
             "full_text_pairs": full_pairs, "full_text_coverage": {aid: sum(p["id"] in full_vectors for p in ap), bid: sum(p["id"] in full_vectors for p in bp)},

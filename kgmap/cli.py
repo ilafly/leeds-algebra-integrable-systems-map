@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from .core import ROOT, dump_json, load_config
+from .connections import thematic_candidate
 from .http import CachedHTTP
 from .pipeline import analyse, collect
 from .report import write_reports
@@ -75,7 +76,7 @@ def main(argv=None):
     write_reports(snapshot, store.reviews(), args.database.parent.parent / "reports")
     included = sum(not p.get("quarantined") and not p.get("is_retracted") for p in snapshot["publications"])
     print(f"{len(snapshot['publications'])} retrieved publication records, {included} included in discovery; {len(snapshot['concepts'])} concepts; "
-          f"{len(snapshot['connections'])} candidate researcher pairs. Reports written to reports/.")
+          f"{len(snapshot['connections'])} scored researcher pairs, {sum(thematic_candidate(c) for c in snapshot['connections'])} thematic candidates with shared topics. Reports written to reports/.")
     if any(r.get("status") != "verified" for r in snapshot["researchers"]):
         print("Some identities require review; no publications were collected for those identities.", file=sys.stderr)
         return 2

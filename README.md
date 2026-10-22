@@ -2,7 +2,7 @@
 
 A working local research prototype for finding evidence-based mathematical connections across the Leeds algebra and integrable systems research community. The original three-person pilot has been expanded to **15 researchers** in `config/researchers.toml`. Python 3.11+, Streamlit, NetworkX, SQLite and PyVis; no paid AI API, model download or graph database.
 
-The included dataset uses **453 publication records in discovery, 395 with abstracts**, collected through verified identities, OpenAlex, ORCID, Crossref and arXiv. A total of 480 identifier-deduplicated records are retained; 27 are quarantined pending independent authorship corroboration. The system scores all 105 researcher pairs. The [evidence report](reports/discovered_connections.md) contains the current topic count, coverage, possible duplicate versions and uncertainty. Fourteen ORCIDs are independently corroborated; Oleg Chalykh's ORCID remains explicitly labelled OpenAlex-reported. The roster includes former and joint affiliations and is not a current Leeds employment directory.
+The included dataset uses **453 publication records in discovery, 395 with abstracts**, collected through verified identities, OpenAlex, ORCID, Crossref and arXiv. A total of 480 identifier-deduplicated records are retained; 27 are quarantined pending independent authorship corroboration. The system scores all 105 researcher pairs; thematic arcs and candidate listings require at least one shared extracted topic. The [evidence report](reports/discovered_connections.md) contains the current topic count, coverage, possible duplicate versions and uncertainty. Fourteen ORCIDs are independently corroborated; Oleg Chalykh's ORCID remains explicitly labelled OpenAlex-reported. The roster includes former and joint affiliations and is not a current Leeds employment directory.
 
 Full-text analysis adds page-linked topic evidence and a separate body-text similarity signal. The first balanced sample of **30 attempted papers** yielded **28 usable PDFs, covering all 15 researchers and 842 pages**, with 156 page-linked topic mentions. Successful coverage and the two access failures are listed in the [evidence report](reports/discovered_connections.md). PDFs and extracted pages remain local in `data/fulltext/`, outside Git. The app can switch back to the title, abstract and profile baseline.
 
@@ -74,6 +74,7 @@ The full-text stage uses OpenAlex's source-supplied open-access PDF locations an
 - Turn on **Show relationship labels** to put relationship names, paper counts or candidate scores on the links. Dense maps start with labels off. **Inspect a relationship** provides a searchable selector for exactly the links in the current map, respecting date, researcher, concept, relationship-type, score and review filters. It initially shows five supporting papers; **Show all supporting papers** expands the complete set.
 - Click a node to inspect its record and source links. Drag nodes and scroll to zoom. The node dropdown also lists a researcher's topics or the researchers associated with a topic.
 - Filter by researcher, concept, publication year, relationship type and candidate threshold. Publication filters **recompute** topic associations and researcher scores. Dated views omit undated profile descriptions and undated papers.
+- A thematic researcher arc requires **at least one shared extracted topic**, plus a positive score meeting the threshold. Positive text similarity, bridges or indirect paths alone cannot create an arc. The same rule applies to the candidate list, relationship inspector, graph export and report. Authorship and coauthorship remain separate bibliographic relationships. All pair calculations are retained in the snapshot for audit, including pairs omitted from thematic display.
 - Select two researchers to highlight an evidence-bearing path. Use the integrated map to see the complete path. The search honours the visible relationship types, date range, threshold and rejected reviews, and excludes the direct thematic shortcut.
 - The **Candidate connections** tab gives score components, topic bridges, abstract and full-text pairs, supporting publications, links and uncertainty. Full-text coverage is shown for each pair.
 - **Publications** searches cached body text as well as metadata. Open **Full text and page evidence** to read extracted pages and follow a page-specific source PDF link. The sidebar's **Include available full text** toggle recomputes the graph and scores for comparison with the metadata baseline.
@@ -99,13 +100,15 @@ Concept extraction uses a small editable terminology vocabulary, Unicode/hyphen 
 The transparent thematic ranking is:
 
 ```text
-0.40 × IDF-weighted Jaccard similarity of researcher concept sets
-+ 0.20 × mean of strongest 3 nonidentical concept co-occurrence bridges
-+ 0.30 × mean of strongest 3 independent publication abstract TF-IDF cosines
-+ 0.10 × strongest 2-hop concept path through an intermediate concept
+0.60 × IDF-weighted Jaccard similarity of researcher concept sets
++ 0.15 × mean of strongest 3 nonidentical concept co-occurrence bridges
++ 0.20 × mean of strongest 3 independent publication abstract TF-IDF cosines
++ 0.05 × strongest 2-hop concept path through an intermediate concept
 ```
 
-When full text is enabled and the visible sample contains usable local text, the four baseline weights are multiplied by 0.8 and a fifth component receives weight **0.20 × mean of strongest 3 independent body-text TF-IDF cosines**. This gives weights 0.32 / 0.16 / 0.24 / 0.08 / 0.20. Full-text topic mentions also extend the concept evidence. The app and report show the weights actually used; samples without full text use the original baseline.
+When full text is enabled and the visible sample contains usable local text, the fixed weights are **0.55 shared topics / 0.15 topic bridges / 0.15 abstract similarity / 0.05 intermediate paths / 0.10 full-text similarity**. Full-text similarity is the mean of the strongest three independent body-text TF-IDF cosines. Full-text topic mentions also extend the concept evidence. The app and report show the weights actually used; samples without full text use the metadata formula above.
+
+The `shared-topics-v2` revision assigns more than half the weight to direct topic overlap and reduces the effect of language similarity and indirect paths. These fixed weights are an exploratory choice, not an empirically calibrated measure. A pair with zero shared topics is excluded from thematic display regardless of its other scores. The shared-topic rule is re-evaluated after filters, full-text selection and rejected extractions are applied. Review IDs persist across the revision; earlier decisions may need reassessment against the new evidence and scores.
 
 TF-IDF uses unigrams and bigrams, log term frequencies, smoothed IDF and L2 normalisation, with separate corpora for abstracts and paper bodies. Joint publications are excluded from both language comparisons so they do not inflate the independent language signal. Missing components contribute zero; weights are not renormalised, so unequal full-text coverage affects rankings. Topic matches in background discussion are not proof of expertise. Shared collaborators use stable author IDs and are reported as social evidence separately from thematic ranking. Coauthorship is not included in the mathematical score.
 

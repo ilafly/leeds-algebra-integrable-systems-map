@@ -6,6 +6,7 @@ import pandas as pd
 
 from .core import ROOT
 from .fulltext import document
+from .connections import thematic_candidate
 
 
 def identity_rows(snapshot):
@@ -31,11 +32,14 @@ def render_report(snapshot, reviews=None):
     pubs = {p["id"]: p for p in snapshot["publications"]}
     concepts = snapshot["concepts"]
     ready = {p["id"]: doc for p in pubs.values() if (doc := document(p))}
-    use_full = any("full_text_similarity" in c["weights"] for c in snapshot["connections"])
     last_full = snapshot.get("collection", {}).get("full_text", {})
-    scoring = ("With full text enabled and at least one usable cached paper, the score is 0.32 × shared-topic Jaccard "
-               "+ 0.16 × co-occurrence bridges + 0.24 × abstract similarity + 0.08 × intermediate path "
-               "+ 0.20 × independent full-text similarity. " if use_full else "This report uses the metadata baseline weights. ")
+    weight_labels = {"shared_concepts": "IDF-weighted shared-topic Jaccard", "related_concepts": "co-occurrence bridges",
+                     "abstract_similarity": "independent abstract similarity", "intermediate_concepts": "intermediate topic path",
+                     "full_text_similarity": "independent full-text similarity"}
+    weights = snapshot["connections"][0]["weights"] if snapshot["connections"] else {}
+    scoring = " + ".join(f"{weight:.2f} × {weight_labels.get(key, key)}" for key, weight in weights.items())
+    candidates = [c for c in snapshot["connections"] if thematic_candidate(c)]
+    without_shared = sum(not c["shared_concepts"] for c in snapshot["connections"])
     providers = Counter(prov["provider"] for p in pubs.values() for prov in p["provenance"])
     parts = ["# Leeds Algebra and Integrable Systems — pilot evidence report", "",
         f"Generated: {snapshot['generated_at']}. Data: real retrieved public metadata and available local public-paper text; no demonstration records.", "",
@@ -74,9 +78,12 @@ def render_report(snapshot, reviews=None):
                         for p in pubs.values() if p.get("full_text")],
                        ["Paper", "Status", "Pages", "Analysis words", "Bibliography cut", "PDF source", "Version", "Licence", "Attempt issues"]), "",
         "## Interpretation and scoring", "",
-        "The metadata baseline is 0.40 × IDF-weighted shared-topic Jaccard + 0.20 × mean of the strongest three "
-        "nonidentical co-occurrence bridges + 0.30 × mean of the strongest three independent abstract TF-IDF cosine similarities "
-        "+ 0.10 × strongest two-hop concept path. " + scoring + "Missing components contribute zero; weights are not renormalised. "
+        "The current thematic score is " + (scoring or "unavailable without a researcher pair") + ". "
+        "Shared extracted topics receive most of the weight; indirect paths and language similarity have less influence. "
+        "A thematic candidate must have at least one shared extracted topic, even if other components produce a positive score. "
+        "All pair calculations remain in the snapshot for audit; pairs without shared topics are omitted from thematic arcs, the app's candidate list and this report's candidate section. "
+        "Missing components contribute zero; weights are not renormalised per pair. "
+        "Co-occurrence bridges and abstract similarity use the mean of their strongest three comparisons; the intermediate component uses the strongest two-hop concept path. "
         "TF-IDF uses unigrams and bigrams with smoothed IDF and L2 normalisation. Full-text similarity uses the mean of the strongest three independent body-text comparisons, with a separate TF-IDF corpus from abstracts. "
         "Joint papers are excluded from both language comparisons. "
         "These choices are transparent exploratory heuristics, not calibrated probabilities or mathematical proofs. "
@@ -84,8 +91,10 @@ def render_report(snapshot, reviews=None):
         "No GENERALISES, SPECIAL_CASE_OF or USES_METHOD edges are inferred without explicit reviewed evidence. "
         "Coauthorship and shared collaborators are reported separately from the thematic score. "
         "Shared broad concepts may inflate rankings; small samples, missing abstracts and provider author-cluster errors limit recall and precision.", "",
-        "## Candidate connections", ""]
-    for c in snapshot["connections"]:
+        "## Candidate connections", "",
+        f"{len(snapshot['connections'])} researcher pairs scored; {len(candidates)} candidates meet the shared-topic rule. "
+        f"{without_shared} pairs with no shared extracted topics are omitted. The app additionally applies its selected score threshold and review filters.", ""]
+    for c in candidates:
         review = reviews.get(c["id"], {})
         parts += [f"### {people[c['researcher_a']]['name']} ↔ {people[c['researcher_b']]['name']}", "",
                   f"Candidate score: **{c['score']:.3f}**. Review: {review.get('status', 'unreviewed')}.", "",

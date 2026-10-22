@@ -9,6 +9,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from kgmap.core import ROOT, stable_id
+from kgmap.connections import thematic_candidate
 from kgmap.graph import build_graph, filtered_snapshot, graph_view, researcher_path
 from kgmap.fulltext import document
 from kgmap.inspection import EdgeInspector, FIELD_LABELS, RELATION_LABELS, safe_source_url
@@ -142,6 +143,7 @@ with st.sidebar:
     threshold = st.slider("Minimum candidate score", 0.0, 1.0, 0.03, 0.01,
                           help="Applied to researcher proximity and concept association edges. These scores use different heuristics.", key="candidate_threshold")
     st.caption("Scores rank exploratory candidates; they are not probabilities.")
+    st.caption("Thematic arcs require at least one shared extracted topic. Shared topics receive most of the weight.")
     st.divider()
     st.caption("Dataset generated " + snapshot["generated_at"][:19].replace("T", " ") + " UTC")
     st.caption("Collection is explicit; opening the app never calls research APIs.")
@@ -233,11 +235,13 @@ with tabs[0]:
 
 with tabs[1]:
     st.subheader("Connections to investigate")
-    st.caption("Collaboration is observed in publication metadata. Thematic proximity is a separate, exploratory calculation.")
-    connections = [c for c in visible["connections"] if c["score"] >= threshold and reviews.get(c["id"], {}).get("status") != "rejected"]
+    st.caption("Thematic candidates require at least one shared extracted topic, then pass the score threshold. Collaboration is observed separately in publication metadata.")
+    connections = [c for c in visible["connections"] if thematic_candidate(c, threshold) and reviews.get(c["id"], {}).get("status") != "rejected"]
+    without_shared = sum(not c["shared_concepts"] for c in visible["connections"])
+    st.caption(f"{len(connections)} candidates shown · {without_shared} pairs omitted because they have no shared extracted topics.")
     pub_lookup = {p["id"]: p for p in visible["publications"]}
     if not connections:
-        st.info("No candidate researcher pairs pass the current filters and review decisions.")
+        st.info("No researcher pairs have shared extracted topics and pass the current score threshold and review decisions.")
     for c in connections:
         label = f"{people[c['researcher_a']]['name']} ↔ {people[c['researcher_b']]['name']} · {c['score']:.3f}"
         with st.expander(label, expanded=True):

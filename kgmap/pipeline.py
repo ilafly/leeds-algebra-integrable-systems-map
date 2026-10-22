@@ -4,7 +4,7 @@ import logging
 from collections import defaultdict
 
 from .concepts import extract_concepts, related_concepts
-from .connections import discover_connections
+from .connections import SCORING_VERSION, discover_connections
 from .core import normalise, utcnow
 from .http import SourceError
 from .sources import (IdentityError, corroborate_authorships, deduplicate, enrich_arxiv, enrich_crossref,
@@ -25,7 +25,8 @@ def analyse(researchers, publications, metadata=None, include_full_text=True):
     return {"schema_version": 1, "generated_at": utcnow(), "data_kind": "retrieved_public_metadata",
             "researchers": researchers, "publications": publications, "concepts": concepts,
             "mentions": mentions, "concept_relations": relations, "connections": connections,
-            "collection": metadata, "analysis": {"include_full_text": include_full_text}}
+            "collection": metadata, "analysis": {"include_full_text": include_full_text,
+                "scoring_version": SCORING_VERSION, "thematic_arc_rule": "at_least_one_shared_extracted_topic"}}
 
 
 def collect(config, http, skip_enrichment=False):

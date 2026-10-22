@@ -5,6 +5,7 @@ from itertools import combinations
 import networkx as nx
 
 from .core import stable_id
+from .connections import SCORING_VERSION, thematic_candidate
 
 
 def build_graph(snapshot, reviews=None):
@@ -43,7 +44,7 @@ def build_graph(snapshot, reviews=None):
                 "source": [publications[pid]["url"] for pid in c["joint_publications"]],
                 "evidence": {"publication_ids": c["joint_publications"]},
                 "method": "shared_deduplicated_publication", "review_status": "unreviewed"})
-        if c["score"] > 0:
+        if thematic_candidate(c):
             add_edge(a, b, {**c, "type": "THEMATIC_PROXIMITY", "confidence": c["score"],
                            "source": [publications[pid]["url"] for pid in c["supporting_publications"]],
                            "evidence": c["explanation"], "reliability": "candidate"})
@@ -85,7 +86,9 @@ def filtered_snapshot(snapshot, years=None, concept=None, researcher=None, revie
     connections = discover_connections(snapshot["researchers"], publications, concepts, mentions, relations, include_full_text=include_full_text)
     return {**snapshot, "publications": publications, "mentions": mentions, "concepts": concepts,
             "concept_relations": relations, "connections": connections,
-            "analysis": {"include_full_text": include_full_text}}
+            "analysis": {**snapshot.get("analysis", {}), "include_full_text": include_full_text,
+                         "scoring_version": SCORING_VERSION,
+                         "thematic_arc_rule": "at_least_one_shared_extracted_topic"}}
 
 
 def graph_view(graph, view, threshold=0.0, types=None, include_rejected=False):
@@ -99,6 +102,8 @@ def graph_view(graph, view, threshold=0.0, types=None, include_rejected=False):
         if a not in g or b not in g or (types is not None and data["type"] not in types):
             continue
         if not include_rejected and data.get("review_decision") == "rejected":
+            continue
+        if data["type"] == "THEMATIC_PROXIMITY" and not thematic_candidate(data, threshold):
             continue
         if data.get("status") == "candidate" and data.get("confidence", 0) < threshold:
             continue

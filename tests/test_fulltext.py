@@ -9,7 +9,7 @@ from pypdf.generic import DictionaryObject, NameObject, DecodedStreamObject
 from conftest import paper
 from kgmap import fulltext
 from kgmap.core import dump_json
-from kgmap.graph import filtered_snapshot
+from kgmap.graph import build_graph, filtered_snapshot
 from kgmap.http import SourceError
 from kgmap.pipeline import analyse
 
@@ -105,7 +105,7 @@ def test_fulltext_similarity_is_separate_and_has_coverage(tmp_path, monkeypatch,
     c = snapshot['connections'][0]
     assert c['components']['full_text_similarity'] == pytest.approx(1.0)
     assert c['components']['abstract_similarity'] == 0
-    assert c['weights']['full_text_similarity'] == 0.2
+    assert c['weights']['full_text_similarity'] == 0.1
     assert sum(c['weights'].values()) == pytest.approx(1)
     assert c['full_text_coverage'] == {'test-a': 2, 'test-b': 2}
     assert len(c['full_text_pairs']) == 1
@@ -121,6 +121,19 @@ def test_missing_or_mismatched_cache_cannot_contribute(tmp_path, monkeypatch, re
     p['full_text']['sha256'] = 'incorrect'
     assert fulltext.document(p) is None
     assert not filtered_snapshot(snapshot)['mentions']
+
+
+def test_arc_disappears_when_its_only_shared_topic_is_in_disabled_full_text(tmp_path, monkeypatch, researchers):
+    records = [paper('left', ['test-a'], title='Lie algebras', abstract='We investigate examples.'),
+               paper('right', ['test-b'], title='Quantum groups', abstract='We investigate examples.')]
+    for p in records:
+        install_document(tmp_path, monkeypatch, p, 'Hopf algebras occur here.')
+    s = analyse(researchers[:2], records)
+    assert any(e['type'] == 'THEMATIC_PROXIMITY' for *_, e in build_graph(s).edges(data=True))
+    baseline = filtered_snapshot(s, include_full_text=False)
+    assert baseline['connections'][0]['score'] > 0
+    assert not baseline['connections'][0]['shared_concepts']
+    assert not any(e['type'] == 'THEMATIC_PROXIMITY' for *_, e in build_graph(baseline).edges(data=True))
 
 
 def test_public_source_guard_respects_robots_and_delay():
