@@ -1,0 +1,35 @@
+[collection]
+max_publications = 40
+cache_days = 30
+timeout_seconds = 25
+# Optional, used for polite pools. Never put API keys in this file.
+contact_email = ""
+crossref_enrichment = true
+arxiv_enrichment = true
+
+[[researchers]]
+id = "ilaria-colazzo"
+name = "Ilaria Colazzo"
+aliases = ["Ilaria Colazzo"]
+affiliation = "University of Leeds"
+profile_url = "https://eps.leeds.ac.uk/maths/staff/14917/dr-ilaria-colazzo"
+homepage_url = "https://www.ilariacolazzo.info/"
+# Linked from her public personal page; checked again on collection.
+orcid = "0000-0002-2713-0409"
+
+[[researchers]]
+id = "joao-faria-martins"
+name = "João Faria Martins"
+aliases = ["Joao Faria Martins", "Joao Goncalves Faria Martins", "João Gonçalves Faria Martins", "J. Faria Martins"]
+affiliation = "University of Leeds"
+homepage_url = "https://joaofariamartins.github.io/"
+# profile_url and ORCID can be discovered from the linked personal homepage.
+
+[[researchers]]
+id = "paul-martin"
+name = "Paul Martin"
+aliases = ["Paul Purdon Martin", "Paul P. Martin", "P. P. Martin", "Paul Martin"]
+affiliation = "University of Leeds"
+profile_url = "https://eps.leeds.ac.uk/maths/staff/4061/professor-paul-martin"
+homepage_url = "https://ppmarti.github.io/"
+# No unverified identifier is assigned to this ambiguous name.
