@@ -206,9 +206,19 @@ with tabs[3]:
     if stale:
         st.warning(f"{len(stale)} requests used explicitly recorded stale cached responses.")
     issues = snapshot.get("collection", {}).get("issues", [])
-    if issues:
-        st.warning(f"{len(issues)} collection/enrichment issues. Retrieved records remain available.")
-        st.dataframe(pd.DataFrame(issues), hide_index=True)
+    source_issues = [e for e in issues if e["stage"] != "publication_authorship_review"]
+    authorship_issues = [e for e in issues if e["stage"] == "publication_authorship_review"]
+    if source_issues:
+        st.warning(f"{len(source_issues)} collection/enrichment issues. Retrieved records remain available.")
+        st.dataframe(pd.DataFrame(source_issues), hide_index=True)
+    if authorship_issues:
+        with st.expander(f"{len(authorship_issues)} publication assignments awaiting authorship review"):
+            st.write("Flagged author clusters require independent publication evidence. Uncorroborated assignments are excluded from discovery; absence of evidence does not establish non-authorship.")
+            original_pubs = {p["id"]: p for p in snapshot["publications"]}
+            st.dataframe(pd.DataFrame([{"Researcher": people[e["researcher"]]["name"],
+                "Title": original_pubs[e["publication"]]["title"], "Source": e["source"], "Reason": e["error"]}
+                for e in authorship_issues]), hide_index=True,
+                column_config={"Source": st.column_config.LinkColumn("Source")})
     duplicates = snapshot.get("collection", {}).get("possible_duplicate_title_groups", [])
     if duplicates:
         with st.expander(f"{len(duplicates)} matching-title groups need version review"):

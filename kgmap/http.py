@@ -24,6 +24,15 @@ class CachedHTTP:
         self.last_request = {}
         self.events = []
 
+    def is_cached(self, url, params=None, accept=None):
+        public_params = {k: v for k, v in (params or {}).items() if k != "api_key"}
+        public_url = requests.Request("GET", url, params=public_params).prepare().url
+        key = hashlib.sha256((public_url + (accept or "")).encode()).hexdigest()
+        with self.store.connect() as db:
+            row = db.execute("SELECT fetched_at FROM cache WHERE key=?", (key,)).fetchone()
+        return bool(row and (self.offline or (not self.refresh and
+            (datetime.now(timezone.utc) - datetime.fromisoformat(row[0])).total_seconds() < self.days * 86400)))
+
     def get(self, url, params=None, accept=None, allow_not_found=False):
         params = dict(params or {})
         if "api.openalex.org" in url and os.environ.get("OPENALEX_API_KEY"):
@@ -50,7 +59,7 @@ class CachedHTTP:
                 response = self.session.get(prepared.url, headers={"Accept": accept} if accept else {}, timeout=self.timeout)
                 if response.status_code in {429, 500, 502, 503, 504} and attempt < 2:
                     delay = response.headers.get("Retry-After", "")
-                    time.sleep(min(float(delay) if delay.isdigit() else 2 ** (attempt + 1), 15))
+                    time.sleep(max(interval, min(float(delay) if delay.isdigit() else 2 ** (attempt + 1), 15)))
                     continue
                 if response.status_code == 404 and allow_not_found:
                     body = b""

@@ -55,7 +55,7 @@ def filtered_snapshot(snapshot, years=None, concept=None, researcher=None, revie
     from .concepts import related_concepts
     from .connections import discover_connections
     reviews = reviews or {}
-    publications = [p for p in snapshot["publications"] if not p.get("is_retracted")
+    publications = [p for p in snapshot["publications"] if not p.get("is_retracted") and not p.get("quarantined")
                     and (not years or (p.get("year") is not None and years[0] <= p["year"] <= years[1]))]
     if researcher:
         publications = [p for p in publications if researcher in p["researcher_ids"]]

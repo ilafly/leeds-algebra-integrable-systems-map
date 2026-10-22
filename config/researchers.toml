@@ -33,3 +33,106 @@ affiliation = "University of Leeds"
 profile_url = "https://eps.leeds.ac.uk/maths/staff/4061/professor-paul-martin"
 homepage_url = "https://ppmarti.github.io/"
 # No unverified identifier is assigned to this ambiguous name.
+
+[[researchers]]
+id = "karin-baur"
+name = "Karin Baur"
+aliases = ["Karin Baur"]
+affiliation = "University of Leeds"
+profile_url = "https://eps.leeds.ac.uk/maths/staff/4250/professor-karin-baur-"
+affiliation_note = "Leeds affiliation alongside a professorship at Ruhr-Universität Bochum; the roster is a research context, not a current staff directory."
+affiliation_source = "https://math.ruhr-uni-bochum.de/fileadmin/content/Mathematik/Arbeitsbereiche/Gruppe_Baur/2025-09.pdf"
+
+[[researchers]]
+id = "oleg-chalykh"
+name = "Oleg Chalykh"
+# OpenAlex's full name is tied to the ORCID linked from the Leeds profile.
+aliases = ["Oleg Chalykh", "Oleg Aleksandrovich Chalykh"]
+affiliation = "University of Leeds"
+profile_url = "https://eps.leeds.ac.uk/maths/staff/4012/dr-oleg-chalykh"
+orcid = "0000-0003-4529-2310"
+
+[[researchers]]
+id = "eleonore-faber"
+name = "Eleonore Faber"
+aliases = ["Eleonore Faber"]
+affiliation = "University of Leeds"
+profile_url = "https://eps.leeds.ac.uk/maths/staff/4342/prof-eleonore-faber"
+homepage_url = "https://imsc.uni-graz.at/faber/"
+affiliation_note = "The public CV lists professorships at both Leeds and the University of Graz."
+affiliation_source = "https://imsc.uni-graz.at/faber/files/fabercv2024.pdf"
+
+[[researchers]]
+id = "bethany-marsh"
+name = "Bethany Marsh"
+aliases = ["Bethany Rose Marsh", "Bethany R. Marsh"]
+affiliation = "University of Leeds"
+profile_url = "https://eps.leeds.ac.uk/maths/staff/8632/professor-bethany-rose-marsh"
+
+[[researchers]]
+id = "rudolf-tange"
+name = "Rudolf Tange"
+aliases = ["Rudolf Tange", "Rudolf H. Tange"]
+affiliation = "University of Leeds"
+profile_url = "https://eps.leeds.ac.uk/maths/staff/4083/dr-rudolf-tange"
+
+[[researchers]]
+id = "michael-wibmer"
+name = "Michael Wibmer"
+aliases = ["Michael Wibmer"]
+affiliation = "University of Leeds"
+profile_url = "https://eps.leeds.ac.uk/maths/staff/14204/dr-michael-wibmer"
+orcid = "0000-0003-4462-0263"
+# The Leeds group page and staff profile spell the first name Michael.
+
+[[researchers]]
+id = "alison-parker"
+name = "Alison Parker"
+aliases = ["Alison E. Parker"]
+affiliation = "University of Leeds"
+orcid = "0000-0001-7014-6150"
+require_publication_corroboration = true
+# The OpenAlex cluster contains namesake psychology and chemistry records.
+# Membership in ORCID's public bibliography or an exact publisher ORCID is required.
+affiliation_note = "Former Leeds affiliation: public ORCID employment records give an end date of 2024-09-30; not presented as current Leeds employment."
+affiliation_source = "https://orcid.org/0000-0001-7014-6150"
+# Verified against the public ORCID name and employment records, not this setting alone.
+
+[[researchers]]
+id = "andrew-brooke-taylor"
+name = "Andrew Brooke-Taylor"
+aliases = ["Andrew D. Brooke-Taylor"]
+affiliation = "University of Leeds"
+profile_url = "https://eps.leeds.ac.uk/maths/staff/4010/dr-andrew-brooke-taylor"
+
+[[researchers]]
+id = "vincenzo-mantova"
+name = "Vincenzo Mantova"
+aliases = ["Vincenzo L Mantova", "Vincenzo L. Mantova"]
+affiliation = "University of Leeds"
+profile_url = "https://eps.leeds.ac.uk/maths/staff/4058/dr-vincenzo-l-mantova"
+
+[[researchers]]
+id = "vincent-caudrelier"
+name = "Vincent Caudrelier"
+aliases = ["Vincent Caudrelier"]
+affiliation = "University of Leeds"
+profile_url = "https://eps.leeds.ac.uk/maths/staff/4011/dr-vincent-caudrelier"
+
+[[researchers]]
+id = "alexander-mikhailov"
+name = "Alexander Mikhailov"
+# The Cyrillic OpenAlex display name has the exact ORCID linked by the Leeds profile.
+aliases = ["Alexander V. Mikhailov", "А. В. Михайлов"]
+affiliation = "University of Leeds"
+profile_url = "https://eps.leeds.ac.uk/maths/staff/4063/professor-alexander-mikhailov"
+
+[[researchers]]
+id = "francesca-fedele"
+name = "Francesca Fedele"
+aliases = ["Francesca Fedele"]
+affiliation = "University of Leeds"
+profile_url = "https://eps.leeds.ac.uk/maths/staff/12340/francesca-fedele"
+homepage_url = "https://sites.google.com/view/francescafedele/home"
+affiliation_note = "Leeds research fellow from October 2022; her homepage announces a Humboldt fellowship at Ruhr-Universität Bochum from October 2026."
+affiliation_source = "https://sites.google.com/view/francescafedele/home"

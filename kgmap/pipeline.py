@@ -7,8 +7,8 @@ from .concepts import extract_concepts, related_concepts
 from .connections import discover_connections
 from .core import normalise, utcnow
 from .http import SourceError
-from .sources import (IdentityError, deduplicate, enrich_arxiv, enrich_crossref,
-                      resolve_identity, retrieve_publications)
+from .sources import (IdentityError, corroborate_authorships, deduplicate, enrich_arxiv, enrich_crossref,
+                      prefetch_arxiv, resolve_identity, retrieve_publications)
 
 log = logging.getLogger(__name__)
 
@@ -55,6 +55,11 @@ def collect(config, http, skip_enrichment=False):
             {pilot_author_ids[a["openalex_id"]] for a in p["authors"] if a.get("openalex_id") in pilot_author_ids})
     publications = deduplicate(publications)
     if not skip_enrichment:
+        arxiv_responses = {}
+        if config["collection"].get("arxiv_enrichment", True):
+            log.info("Fetching uncached arXiv metadata in exact-identifier batches")
+            arxiv_responses, arxiv_issues = prefetch_arxiv(http, publications)
+            issues.extend(arxiv_issues)
         for i, p in enumerate(publications):
             for enabled, provider, method in [
                 (config["collection"].get("arxiv_enrichment", True), "arXiv", enrich_arxiv),
@@ -64,14 +69,20 @@ def collect(config, http, skip_enrichment=False):
                     continue
                 if provider == "arXiv" and not p.get("arxiv_id"):
                     continue
+                if provider == "arXiv" and p["arxiv_id"] in arxiv_responses and arxiv_responses[p["arxiv_id"]] is None:
+                    continue
                 if provider == "Crossref" and (not p.get("doi") or p["doi"].startswith("10.48550/arxiv.")):
                     continue
                 log.info("Enriching %d/%d: %s — %s", i + 1, len(publications), provider, p["title"][:65])
                 try:
-                    method(http, p)
+                    if provider == "arXiv":
+                        method(http, p, response_xml=arxiv_responses.get(p["arxiv_id"]))
+                    else:
+                        method(http, p)
                 except SourceError as exc:
                     issues.append({"publication": p["id"], "stage": provider, "error": str(exc)})
         publications = deduplicate(publications)
+    issues.extend(corroborate_authorships(publications, researchers))
     return analyse(researchers, publications, {"counts_before_deduplication": counts,
         "requested_per_researcher": config["collection"].get("max_publications", 40),
         "enrichment_skipped": skip_enrichment, "issues": issues, "requests": http.events})

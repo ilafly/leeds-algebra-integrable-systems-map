@@ -34,5 +34,20 @@
   "topological quantum computation": ["topological quantum computation", "topological quantum computing"],
   "Chern–Simons theory": ["chern simons", "chern simons theory"],
   "Darboux–KP system": ["darboux kp", "darboux kadomtsev petviashvili"],
-  "Dijkgraaf–Witten theory": ["dijkgraaf witten", "dijkgraaf witten theory"]
+  "Dijkgraaf–Witten theory": ["dijkgraaf witten", "dijkgraaf witten theory"],
+  "set theory": ["set theory"],
+  "large cardinals": ["large cardinal", "large cardinals"],
+  "cardinal characteristics": ["cardinal characteristic", "cardinal characteristics"],
+  "supercompact cardinals": ["supercompact cardinal", "supercompact cardinals", "supercompact kappa"],
+  "elementary embeddings": ["elementary embedding", "elementary embeddings"],
+  "Borel reducibility": ["borel reducibility"],
+  "Borel completeness": ["borel complete", "borel completeness"],
+  "category theory": ["category theory"],
+  "model theory": ["model theory", "model theoretic", "model theoretical"],
+  "Diophantine geometry": ["diophantine geometry"],
+  "surreal numbers": ["surreal number", "surreal numbers"],
+  "transseries": ["transseries"],
+  "generalised power series": ["generalised power series", "generalized power series"],
+  "exponential fields": ["exponential field", "exponential fields"],
+  "Hardy fields": ["hardy field", "hardy fields"]
 }

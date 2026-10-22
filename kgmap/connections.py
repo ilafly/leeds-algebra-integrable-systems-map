@@ -17,7 +17,7 @@ def weighted_jaccard(a, b, weights):
 def discover_connections(researchers, publications, concepts, mentions, related):
     verified = [r for r in researchers if r.get("status") == "verified"]
     profiles = {r["id"]: set() for r in verified}
-    papers = {r["id"]: [p for p in publications if r["id"] in p["researcher_ids"] and not p.get("is_retracted")] for r in verified}
+    papers = {r["id"]: [p for p in publications if r["id"] in p["researcher_ids"] and not p.get("is_retracted") and not p.get("quarantined")] for r in verified}
     pub_concepts = {}
     for m in mentions:
         if not m["owner"].startswith("researcher:"):
@@ -30,7 +30,7 @@ def discover_connections(researchers, publications, concepts, mentions, related)
                 profiles[r["id"]].add(m["concept"])
     import math
     concept_weights = {c: 1 + math.log((1 + len(verified)) / (1 + sum(c in v for v in profiles.values()))) for c in concepts}
-    all_papers = [p for p in publications if p.get("abstract") and not p.get("is_retracted")]
+    all_papers = [p for p in publications if p.get("abstract") and not p.get("is_retracted") and not p.get("quarantined")]
     vectors = dict(zip([p["id"] for p in all_papers], tfidf_vectors([p["abstract"] for p in all_papers])))
     related_by_pair = {tuple(sorted([e["source_id"], e["target_id"]])): e for e in related}
     adjacency = {}

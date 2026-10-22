@@ -22,6 +22,13 @@ def normalise(text):
     return re.sub(r"[^a-z0-9]+", " ", text).strip()
 
 
+def normalise_name(text):
+    """Preserve non-Latin names; distinct scripts must not collapse to empty strings."""
+    text = unicodedata.normalize("NFKD", text or "")
+    text = "".join(c for c in text if not unicodedata.combining(c)).casefold()
+    return re.sub(r"[\W_]+", " ", text).strip()
+
+
 def stable_id(prefix, *parts):
     return prefix + ":" + hashlib.sha256("|".join(parts).encode()).hexdigest()[:20]
 

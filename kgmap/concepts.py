@@ -68,14 +68,14 @@ def discover_phrases(documents, vocabulary):
 
 def extract_concepts(publications, researchers, vocabulary=None):
     vocabulary = vocabulary if vocabulary is not None else load_vocabulary()
-    auto = discover_phrases([p["title"] for p in publications], vocabulary)
+    auto = discover_phrases([p["title"] for p in publications if not p.get("quarantined") and not p.get("is_retracted")], vocabulary)
     terms = {**auto, **vocabulary}
     compiled = {label: [re.compile(r"(?<!\w)" + re.escape(normalise(a)) + r"(?!\w)")
                         for a in set([label, *aliases])]
                 for label, aliases in terms.items()}
     documents = []
     for p in publications:
-        if p.get("is_retracted"):
+        if p.get("is_retracted") or p.get("quarantined"):
             continue
         for field in ("title", "abstract"):
             if p.get(field):

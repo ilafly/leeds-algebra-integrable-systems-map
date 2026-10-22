@@ -8,7 +8,7 @@ from urllib.robotparser import RobotFileParser
 
 from bs4 import BeautifulSoup
 
-from .core import arxiv_key, doi_key, normalise, stable_id, utcnow
+from .core import arxiv_key, doi_key, normalise, normalise_name, stable_id, utcnow
 from .http import SourceError
 
 OPENALEX = "https://api.openalex.org"
@@ -51,7 +51,7 @@ def profile_record(http, person):
     """Read only linked public profiles. No search-engine snippet ingestion."""
     result = {"sources": [], "descriptions": [], "linked_orcids": [], "identity_confirmed": False}
     urls = list(dict.fromkeys(u for u in [person.get("profile_url"), person.get("homepage_url")] if u))
-    aliases = [normalise(n) for n in [person["name"], *person.get("aliases", [])]]
+    aliases = [normalise_name(n) for n in [person["name"], *person.get("aliases", [])]]
     for url in urls:
         try:
             soup = fetch_page(http, url)
@@ -60,7 +60,7 @@ def profile_record(http, person):
             main = soup.find("main") or soup
             text = main.get_text(" ", strip=True)
             headings = " ".join(h.get_text(" ", strip=True) for h in soup.find_all(["title", "h1", "h2", "h3"]))
-            own_name = any(alias in normalise(headings) for alias in aliases)
+            own_name = any(alias and alias in normalise_name(headings) for alias in aliases)
             affiliation = normalise(person["affiliation"]) in normalise(text + " " + headings)
             confirmed = own_name and affiliation
             orcids = sorted(set(m.group() for a in main.find_all("a", href=True)
@@ -95,10 +95,49 @@ def profile_record(http, person):
     return result
 
 
+def corroborate_orcid(http, person, profile):
+    """Use public names AND employment evidence when an HTML profile is missing.
+
+    Historical employment verifies identity, not a claim of current affiliation.
+    The configured identifier on its own remains insufficient.
+    """
+    orcid = person.get("orcid")
+    if not orcid or profile.get("linked_orcids"):
+        return profile
+    url = f"https://pub.orcid.org/v3.0/{orcid}"
+    try:
+        record = http.json(url + "/person")
+        names = record.get("name") or {}
+        primary = " ".join((names.get(part) or {}).get("value", "") for part in ["given-names", "family-name"])
+        public_names = [primary, (names.get("credit-name") or {}).get("value", "")]
+        public_names += [n.get("content", "") for n in record.get("other-names", {}).get("other-name", [])]
+        configured_names = {normalise_name(n) for n in [person["name"], *person.get("aliases", [])]}
+        name_match = any(normalise_name(n) in configured_names for n in public_names if n)
+        employment_record = http.json(url + "/employments")
+        employments = employment_record.get("employment-summary", [])[:]
+        for group in employment_record.get("affiliation-group", []):
+            for summary in group.get("summaries", []):
+                if summary.get("employment-summary"):
+                    employments.append(summary["employment-summary"])
+        matches = [e for e in employments if normalise(e.get("organization", {}).get("name")) == normalise(person["affiliation"])]
+        confirmed = name_match and bool(matches)
+        profile["sources"].append({"url": url + "/person", "employment_url": url + "/employments",
+            "status": "retrieved", "identity_confirmed": confirmed, "name_match": name_match,
+            "affiliation_found": bool(matches), "method": "public_orcid_name_and_employment",
+            "employment_evidence": matches, "retrieved_at": utcnow()})
+        if confirmed:
+            profile["identity_confirmed"] = True
+            profile["linked_orcids"] = sorted(set(profile.get("linked_orcids", [])) | {orcid})
+            profile["orcid_confirmation_method"] = "public_orcid_name_and_employment"
+    except SourceError as exc:
+        profile["sources"].append({"url": url, "status": "unavailable", "error": str(exc)})
+    return profile
+
+
 def candidate_matches(candidate, person, profile):
-    names = {normalise(n) for n in [person["name"], *person.get("aliases", [])]}
-    name_match = normalise(candidate.get("display_name")) in names
-    institutions = candidate.get("last_known_institutions") or []
+    names = {normalise_name(n) for n in [person["name"], *person.get("aliases", [])] if normalise_name(n)}
+    name_match = bool(normalise_name(candidate.get("display_name"))) and normalise_name(candidate.get("display_name")) in names
+    institutions = list(candidate.get("last_known_institutions") or [])
     institutions += [a.get("institution", {}) for a in candidate.get("affiliations", [])]
     leeds = any(normalise(i.get("display_name")) == normalise(person["affiliation"]) for i in institutions)
     candidate_orcid = (candidate.get("orcid") or "").rsplit("/", 1)[-1]
@@ -112,7 +151,7 @@ def candidate_matches(candidate, person, profile):
     if not name_match:
         return False, "Name does not match configured aliases"
     if candidate_orcid and candidate_orcid in linked and profile.get("identity_confirmed"):
-        return True, "Exact ORCID linked from an identity-confirmed researcher page; matching name"
+        return True, "Exact ORCID corroborated by public researcher evidence; matching name"
     if profile.get("identity_confirmed") and leeds:
         return True, "Unique exact name/alias and Leeds affiliation, corroborated by researcher page"
     return False, "Insufficient independent identity evidence"
@@ -135,7 +174,7 @@ def select_identity(candidates, person, profile):
 
 def resolve_identity(http, person):
     person = dict(person)
-    profile = profile_record(http, person)
+    profile = corroborate_orcid(http, person, profile_record(http, person))
     candidates = {}
     linked = profile["linked_orcids"]
     # Query by confirmed ORCID first; name search handles missing or split clusters.
@@ -164,12 +203,36 @@ def resolve_identity(http, person):
             orcid_status = "retrieved"
         except SourceError as exc:
             orcid_status = "unavailable: " + str(exc)
+    work_ids = {"doi": [], "arxiv": []}
+    if person.get("require_publication_corroboration") and orcid in linked:
+        url = f"https://pub.orcid.org/v3.0/{orcid}/works"
+        try:
+            works = http.json(url)
+            dois, arxiv_ids = set(), set()
+            for group in works.get("group", []):
+                containers = [group.get("external-ids", {})]
+                containers += [w.get("external-ids", {}) for w in group.get("work-summary", [])]
+                for container in containers:
+                    for identifier in container.get("external-id", []):
+                        if identifier.get("external-id-relationship") == "part-of":
+                            continue
+                        value = identifier.get("external-id-value", "")
+                        if identifier.get("external-id-type", "").lower() == "doi" and doi_key(value):
+                            dois.add(doi_key(value))
+                        if arxiv_key(value):
+                            arxiv_ids.add(arxiv_key(value))
+            work_ids = {"doi": sorted(dois), "arxiv": sorted(arxiv_ids)}
+            profile["sources"].append({"url": url, "status": "retrieved", "method": "public_orcid_bibliography",
+                "doi_count": len(dois), "arxiv_count": len(arxiv_ids), "retrieved_at": utcnow()})
+        except SourceError as exc:
+            profile["sources"].append({"url": url, "status": "unavailable", "error": str(exc)})
     return {**person, "status": "verified", "reason": basis, "profile": profile,
             "openalex_id": candidate["id"], "verified_orcid": orcid if orcid in linked else None,
             "reported_orcid": orcid,
-            "orcid_basis": "linked_from_confirmed_researcher_page" if orcid in linked else "OpenAlex_reported_not_independently_corroborated",
+            "orcid_basis": profile.get("orcid_confirmation_method", "linked_from_confirmed_researcher_page") if orcid in linked else "OpenAlex_reported_not_independently_corroborated",
             "orcid_status": orcid_status, "candidates": evaluated,
-            "openalex_works_count": candidate.get("works_count"), "verified_at": utcnow()}
+            "openalex_works_count": candidate.get("works_count"), "corroborated_work_ids": work_ids,
+            "verified_at": utcnow()}
 
 
 def openalex_publication(work, researcher_id):
@@ -227,18 +290,42 @@ def enrich_crossref(http, publication):
         publication["abstract"] = strip_markup(message["abstract"])
         fields.append("abstract")
     publication["crossref"] = {"title": message.get("title", []), "type": message.get("type"),
-        "publisher": message.get("publisher"), "licenses": message.get("license", [])}
+        "publisher": message.get("publisher"), "licenses": message.get("license", []),
+        "authors": message.get("author", [])}
     publication["provenance"].append({"source": url, "provider": "Crossref", "fields": ["crossref", *fields],
                                       "method": "exact_doi_lookup", "retrieved_at": utcnow()})
 
 
-def enrich_arxiv(http, publication):
+def prefetch_arxiv(http, publications, batch_size=25):
+    """Batch uncached exact IDs, retaining the existing individual-response cache."""
+    url = "https://export.arxiv.org/api/query"
+    ids = sorted({p["arxiv_id"] for p in publications if p.get("arxiv_id")
+                  and not http.is_cached(url, {"id_list": p["arxiv_id"]}, "application/atom+xml")})
+    responses, issues = {}, []
+    for start in range(0, len(ids), batch_size):
+        batch = ids[start:start + batch_size]
+        try:
+            body = http.get(url, {"id_list": ",".join(batch), "max_results": len(batch)}, "application/atom+xml")
+            root = ET.fromstring(body)
+            found = {arxiv_key(entry.findtext("{http://www.w3.org/2005/Atom}id", ""))
+                     for entry in root.findall("{http://www.w3.org/2005/Atom}entry")}
+            for aid in batch:
+                responses[aid] = body if aid in found else None
+                if aid not in found:
+                    issues.append({"stage": "arXiv", "arxiv_id": aid, "error": "Exact identifier missing from batch response"})
+        except (SourceError, ET.ParseError) as exc:
+            issues.append({"stage": "arXiv", "arxiv_ids": batch, "error": str(exc)})
+            responses.update({aid: None for aid in batch})
+    return responses, issues
+
+
+def enrich_arxiv(http, publication, response_xml=None):
     aid = publication.get("arxiv_id")
     # Only use a source-supplied exact identifier, never an author-name search.
     if not aid:
         return
     url = "https://export.arxiv.org/api/query"
-    body = http.get(url, {"id_list": aid}, "application/atom+xml")
+    body = response_xml if response_xml is not None else http.get(url, {"id_list": aid}, "application/atom+xml")
     try:
         root = ET.fromstring(body)
     except ET.ParseError as exc:
@@ -314,3 +401,40 @@ def deduplicate(records):
         p["id"] = "doi:" + p["doi"] if p.get("doi") else ("arxiv:" + p["arxiv_id"] if p.get("arxiv_id") else p["id"])
         merged.append(p)
     return sorted(merged, key=lambda p: (p.get("date") or "", p["id"]), reverse=True)
+
+
+def corroborate_authorships(publications, researchers):
+    """Quarantine assignments in explicitly flagged, contaminated author clusters.
+
+    Absence from a bibliography is uncertainty, never proof of non-authorship.
+    Other independently resolved pilot authors on the same work are retained.
+    """
+    strict = {r["id"]: r for r in researchers if r.get("require_publication_corroboration")}
+    issues = []
+    for p in publications:
+        reviews = []
+        for rid in list(p["researcher_ids"]):
+            if rid not in strict:
+                continue
+            r = strict[rid]
+            corroborated = r.get("corroborated_work_ids", {})
+            dois = {doi_key(d) for d in [p.get("doi"), *p.get("doi_aliases", [])] if doi_key(d)}
+            orcid = r.get("verified_orcid")
+            bibliography = bool(dois & set(corroborated.get("doi", []))) or bool(p.get("arxiv_id") and p["arxiv_id"] in corroborated.get("arxiv", []))
+            publisher = bool(orcid and any((a.get("ORCID") or "").rsplit("/", 1)[-1] == orcid for a in p.get("crossref", {}).get("authors", [])))
+            if bibliography or publisher:
+                reviews.append({"researcher_id": rid, "status": "corroborated",
+                    "method": "public_ORCID_bibliography" if bibliography else "exact_publisher_ORCID",
+                    "source": f"https://pub.orcid.org/v3.0/{orcid}/works" if bibliography else p["url"]})
+            else:
+                note = "Author cluster is flagged for namesake contamination; this assignment has no matching public ORCID work identifier or exact publisher ORCID. Awaiting authorship review; not proof of non-authorship."
+                p["researcher_ids"].remove(rid)
+                p.setdefault("unverified_researcher_ids", []).append(rid)
+                reviews.append({"researcher_id": rid, "status": "needs_review", "method": "contaminated_cluster_authorship_check",
+                                "source": p["url"], "evidence": note})
+                issues.append({"stage": "publication_authorship_review", "researcher": rid,
+                               "publication": p["id"], "source": p["url"], "error": note})
+        if reviews:
+            p["authorship_reviews"] = reviews
+        p["quarantined"] = not bool(p["researcher_ids"])
+    return issues

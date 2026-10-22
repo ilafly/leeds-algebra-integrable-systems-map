@@ -106,3 +106,22 @@ def test_retracted_publication_cannot_create_candidates(researchers):
     snapshot = analyse(researchers[:2], [p])
     assert snapshot["connections"][0]["score"] == 0
     assert snapshot["connections"][0]["joint_publications"] == []
+
+
+def test_quarantined_publication_does_not_create_concepts_or_collaboration(researchers):
+    p = paper("quarantined", ["test-a", "test-b"])
+    p["quarantined"] = True
+    snapshot = analyse(researchers[:2], [p])
+    assert not snapshot["concepts"]
+    assert snapshot["connections"][0]["score"] == 0
+    assert snapshot["connections"][0]["joint_publications"] == []
+    assert not filtered_snapshot(snapshot)["publications"]
+
+
+def test_quarantined_titles_do_not_seed_recurring_terms(researchers):
+    records = [paper("held-1", ["test-a"], title="Unusual zebra algebras", abstract=""),
+               paper("held-2", ["test-a"], title="Unusual zebra algebras", abstract=""),
+               paper("active", ["test-b"], title="Zebra algebras", abstract="")]
+    records[0]["quarantined"] = records[1]["quarantined"] = True
+    concepts, _ = extract_concepts(records, researchers, vocabulary={})
+    assert not concepts

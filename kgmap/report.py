@@ -8,7 +8,8 @@ from .core import ROOT
 
 
 def identity_rows(snapshot):
-    return [{"Researcher": r["name"], "Affiliation": r["affiliation"], "Status": r["status"],
+    return [{"Researcher": r["name"], "Affiliation": r["affiliation"], "Affiliation context": r.get("affiliation_note", "Profile-reported affiliation; not independently checked as current employment"),
+             "Affiliation source": r.get("affiliation_source", r.get("profile_url", "")), "Status": r["status"],
              "OpenAlex": r.get("openalex_id") or "unverified", "ORCID": r.get("verified_orcid") or "unverified / unavailable",
              "Reported ORCID": r.get("reported_orcid") or "unavailable", "ORCID basis": r.get("orcid_basis", ""),
              "Basis": r.get("reason", ""),
@@ -32,11 +33,14 @@ def render_report(snapshot, reviews=None):
     parts = ["# Leeds Algebra and Integrable Systems — pilot evidence report", "",
         f"Generated: {snapshot['generated_at']}. Data: real retrieved public metadata; no demonstration records.", "",
         "## Researcher identity verification", "", markdown_table(identity_rows(snapshot),
-            ["Researcher", "Affiliation", "Status", "OpenAlex", "ORCID", "Reported ORCID", "ORCID basis", "Basis", "Sources"]), "",
-        "Identity verification here means bibliographic identity corroboration, not independent validation of every publication in a provider's author cluster.", "",
+            ["Researcher", "Affiliation", "Affiliation context", "Affiliation source", "Status", "OpenAlex", "ORCID", "Reported ORCID", "ORCID basis", "Basis", "Sources"]), "",
+        "Identity verification here means bibliographic identity corroboration, not independent validation of every publication in a provider's author cluster. The Leeds roster is a research context including former or joint affiliations, not a current employment directory.", "",
         "## Collection coverage", "",
         f"{len(pubs)} identifier-deduplicated publication records, {sum(bool(p.get('abstract')) for p in pubs.values())} with abstracts; "
         f"{len(concepts)} extracted concepts or unvalidated mathematical phrases.", "",
+        f"{sum(not p.get('quarantined') and not p.get('is_retracted') for p in pubs.values())} records are included in discovery; "
+        f"{sum(bool(p.get('quarantined')) for p in pubs.values())} are retained for provenance but quarantined pending authorship corroboration. "
+        "A record corroborated for one pilot researcher can remain in that researcher's sample while an uncertain coauthor assignment is withheld.", "",
         "Metadata provenance records by provider: " + ", ".join(f"{p}: {n}" for p, n in sorted(providers.items())) + ".", "",
         markdown_table([{"Researcher": r["name"], "Publications": sum(r["id"] in p["researcher_ids"] for p in pubs.values()),
                          "With abstracts": sum(r["id"] in p["researcher_ids"] and bool(p.get("abstract")) for p in pubs.values())}
@@ -88,6 +92,13 @@ def render_report(snapshot, reviews=None):
               "Matching titles without a shared reliable identifier remain separate. These groups need review; title similarity alone does not prove they are the same work. Joint publication counts count records and may include unlinked versions.", ""]
     for group in duplicates:
         parts += ["- " + " ; ".join(f"[{pubs[pid]['title']}]({pubs[pid]['url']})" for pid in group)]
+    held = [p for p in pubs.values() if p.get("unverified_researcher_ids")]
+    if held:
+        parts += ["", "## Authorship assignments awaiting review", "",
+                  "Some OpenAlex author clusters contain namesake records. For researchers flagged in configuration, assignments require an exact work identifier in the public ORCID bibliography or an exact publisher-supplied ORCID. Absence of corroboration is not proof of non-authorship. Quarantined records do not contribute concepts, TF-IDF, collaborations or map paths.", ""]
+        for p in held:
+            names = ", ".join(people[rid]["name"] for rid in p["unverified_researcher_ids"])
+            parts += [f"- [{p['title']}]({p['url']}) — assignment to {names} awaiting review."]
     parts += ["", "## Source availability", ""]
     for r in people.values():
         for source in r.get("profile", {}).get("sources", []):
@@ -95,8 +106,11 @@ def render_report(snapshot, reviews=None):
         if r.get("orcid_status"):
             parts += [f"- {r['name']} ORCID API: {r['orcid_status']}"]
     issues = snapshot.get("collection", {}).get("issues", [])
-    parts += ["", f"Collection/enrichment issues: {len(issues)}. Full request log is in data/snapshot.json.", ""]
-    for issue in issues:
+    source_issues = [e for e in issues if e["stage"] != "publication_authorship_review"]
+    review_issues = [e for e in issues if e["stage"] == "publication_authorship_review"]
+    parts += ["", f"Supplementary collection/enrichment issues: {len(source_issues)}. "
+              f"Authorship assignments awaiting corroboration: {len(review_issues)} (listed above). Full request log is in data/snapshot.json.", ""]
+    for issue in source_issues:
         parts += ["- " + issue["stage"] + ": " + issue["error"]]
     parts += ["", "## Review and evaluation", "",
         "Use the application's Review tab or `python -m kgmap.cli export-reviews`, edit the JSON, then `import-reviews`. "
@@ -105,7 +119,7 @@ def render_report(snapshot, reviews=None):
         "Corrected decisions require a note and preserve the original evidence. "
         "A scientific evaluation still needs a mathematician-labelled set: check author-cluster precision, topic extraction precision/recall, "
         "and connection usefulness, then compare against a shared-keywords-only baseline. No accuracy claim is made from software tests.", ""]
-    return "\n".join(parts)
+    return "\n".join(line.rstrip() for line in parts).rstrip() + "\n"
 
 
 def write_reports(snapshot, reviews=None, directory=None):
