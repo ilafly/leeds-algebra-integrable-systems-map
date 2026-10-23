@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from itertools import combinations
 
 import networkx as nx
@@ -89,6 +90,44 @@ def filtered_snapshot(snapshot, years=None, concept=None, researcher=None, revie
             "analysis": {**snapshot.get("analysis", {}), "include_full_text": include_full_text,
                          "scoring_version": SCORING_VERSION,
                          "thematic_arc_rule": "at_least_one_shared_extracted_topic"}}
+
+
+def without_publications(graph):
+    """Summarise researcher -> paper -> topic paths for display, keeping evidence."""
+    projected = graph.subgraph(n for n, d in graph.nodes(data=True) if d["kind"] != "publication").copy()
+    grouped = defaultdict(lambda: {"publication_ids": set(), "mention_ids": set(), "authorship_ids": set(),
+                                   "sources": set(), "confidence": 0.0})
+    for pid, publication in graph.nodes(data=True):
+        if publication["kind"] != "publication":
+            continue
+        record = publication.get("details", {})
+        if record.get("quarantined") or record.get("is_retracted"):
+            continue
+        authors, mentions = [], []
+        for _, other, edge in graph.edges(pid, data=True):
+            if edge.get("review_decision") == "rejected":
+                continue
+            if edge["type"] == "AUTHORED" and graph.nodes[other]["kind"] == "researcher":
+                authors.append((other, edge))
+            elif edge["type"] == "DISCUSSES" and graph.nodes[other]["kind"] == "concept":
+                mentions.append((other, edge))
+        for rid, authorship in authors:
+            for cid, mention in mentions:
+                item = grouped[rid, cid]
+                item["publication_ids"].add(pid)
+                item["mention_ids"].add(mention["id"])
+                item["authorship_ids"].add(authorship["id"])
+                item["confidence"] = max(item["confidence"], mention["confidence"])
+                for edge in (authorship, mention):
+                    source = edge.get("source", [])
+                    item["sources"].update([source] if isinstance(source, str) else source)
+    for (rid, cid), item in sorted(grouped.items()):
+        key = stable_id("paper-topic", rid, cid)
+        projected.add_edge(rid, cid, key=key, id=key, type="PAPERS_MENTION", status="extracted",
+            method="publication_topic_projection", reliability="derived_from_text",
+            confidence=item["confidence"], source=sorted(item["sources"]), review_status="unreviewed",
+            evidence={name: sorted(item[name]) for name in ("publication_ids", "mention_ids", "authorship_ids")})
+    return projected
 
 
 def graph_view(graph, view, threshold=0.0, types=None, include_rejected=False):

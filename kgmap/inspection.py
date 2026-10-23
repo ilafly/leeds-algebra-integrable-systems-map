@@ -4,10 +4,13 @@ from __future__ import annotations
 from collections import defaultdict
 from urllib.parse import urlsplit
 
+from .core import stable_id
+
 RELATION_LABELS = {
     "AUTHORED": "Authored", "COAUTHORED_WITH": "Coauthored",
     "DISCUSSES": "Mentions topic", "RESEARCHES": "Profile mentions topic",
-    "RELATED_TO": "Topics co-occur", "THEMATIC_PROXIMITY": "Thematic candidate",
+    "PAPERS_MENTION": "Papers mention topic",
+    "RELATED_TO": "Topics mentioned together", "THEMATIC_PROXIMITY": "Thematic candidate",
 }
 FIELD_LABELS = {"title": "Title", "abstract": "Abstract", "full_text": "Full text",
                 "research_description": "Research profile"}
@@ -24,6 +27,7 @@ METHODS = {
     "recurring_mathematical_title_phrase": "Match a recurring mathematical title phrase; terminology is unvalidated.",
     "verified_openalex_author_id": "Match the researcher's verified OpenAlex author ID to the publication's authorship metadata.",
     "shared_deduplicated_publication": "Find retained publication records assigned to both researchers.",
+    "publication_topic_projection": "Summarise the researcher's authorship links and unrejected topic mentions in the visible publication sample. Each paper is counted once per topic.",
 }
 
 
@@ -77,7 +81,7 @@ class EdgeInspector:
             if na and nb:
                 facts = [{"label": "Topic coverage", "value": f"{self.label(a)}: {na} papers; {self.label(b)}: {nb} papers"},
                          {"label": "Calculation", "value": f"{count} / √({na} × {nb}) = {edge['confidence']:.4f}"}]
-            short_label = f"Co-occurs · {count} paper{'s' if count != 1 else ''}"
+            short_label = f"Together in {count} paper{'s' if count != 1 else ''}"
         elif kind in {"DISCUSSES", "RESEARCHES"}:
             owner, topic = edge["owner"], edge["concept"]
             a, b, topics = owner, topic, [topic]
@@ -90,7 +94,15 @@ class EdgeInspector:
                      {"label": "Matched phrase", "value": edge.get("matched_phrase", "not recorded")}]
             if owner in self.publications:
                 ids = [owner]
-            short_label = "Mentions · " + (f"p. {edge['page']}" if edge.get("page") else field.lower())
+        elif kind == "PAPERS_MENTION":
+            if not a.startswith("researcher:"):
+                a, b = b, a
+            topics = [b]
+            count = len(ids)
+            summary = f"{count} publication record{'s' if count != 1 else ''} by {self.label(a)} mention “{self.label(b)}” in the current sample."
+            meaning = "This display link summarises authorship and extracted topic mentions while paper nodes are hidden. A mention may describe background work; it does not establish expertise or a mathematical claim. Review the underlying text extractions to correct its evidence."
+            facts = [{"label": "Supporting papers", "value": str(count)}]
+            short_label = f"Papers mention topic ({count})"
         elif kind == "AUTHORED":
             if not a.startswith("researcher:"):
                 a, b = b, a
@@ -100,7 +112,7 @@ class EdgeInspector:
             count = len(ids)
             summary = f"These researchers share {count} publication record{'s' if count != 1 else ''} in the current sample."
             meaning = "This is bibliographic collaboration evidence. Counts can include unlinked preprint and journal versions; absence of a link means none was found in this sample."
-            short_label = f"Coauthored · {count} paper{'s' if count != 1 else ''}"
+            short_label = f"Coauthored ({count} paper{'s' if count != 1 else ''})"
         elif kind == "THEMATIC_PROXIMITY":
             summary = edge["explanation"]
             meaning = edge["uncertainty"]
@@ -136,13 +148,16 @@ class EdgeInspector:
             if any(edge.get("full_text_coverage", {}).values()):
                 facts.append({"label": "Full-text coverage", "value": "; ".join(
                     f"{self.label('researcher:' + rid)}: {n} papers" for rid, n in edge["full_text_coverage"].items())})
-            short_label = f"Thematic · {edge['score']:.3f}"
+            short_label = f"Thematic candidate: {edge['score']:.3f}"
 
         ids = [pid for pid in dict.fromkeys(ids) if pid in self.publications]
         papers = []
         for pid in ids if limit is None else ids[:limit]:
             p = self.publications[pid]
             found = [m for m in self.mentions[pid] if m["concept"] in topics]
+            if kind == "PAPERS_MENTION":
+                allowed = set(evidence["mention_ids"])
+                found = [m for m in found if stable_id("mention", m["owner"], m["concept"], m["field"]) in allowed]
             if kind == "DISCUSSES":
                 found = [edge]  # Inspect this exact field/page rather than another parallel edge.
             # Show one best-located excerpt per topic, preferring PDF page evidence.
@@ -161,7 +176,7 @@ class EdgeInspector:
         sources = list(dict.fromkeys([sources] if isinstance(sources, str) else sources))
         review = edge.get("review", {})
         return {"id": edge["id"], "label": RELATION_LABELS.get(kind, kind), "short_label": short_label,
-                "title": f"{self.label(a)} {'→' if kind in {'AUTHORED', 'DISCUSSES', 'RESEARCHES'} else '↔'} {self.label(b)}",
+                "title": f"{self.label(a)} {'→' if kind in {'AUTHORED', 'DISCUSSES', 'RESEARCHES', 'PAPERS_MENTION'} else '↔'} {self.label(b)}",
                 "status": edge.get("status", "unrecorded"), "review": review.get("status", edge.get("review_status", "unreviewed")),
                 "review_note": review.get("note", ""), "summary": summary, "meaning": meaning,
                 "metric": metric, "facts": facts, "components": components,

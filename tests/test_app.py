@@ -3,6 +3,7 @@ from streamlit.testing.v1 import AppTest
 from kgmap.pipeline import analyse
 from kgmap.store import Store
 from kgmap.graph import build_graph
+from kgmap.visualisation import graph_html
 from conftest import paper
 
 
@@ -55,6 +56,39 @@ def test_relationship_inspector_obeys_map_view_and_type_filters(tmp_path, monkey
     next(x for x in at.multiselect if x.label == 'Relationship types').set_value(['AUTHORED']).run()
     assert not at.exception
     assert any('No relationships pass' in x.value for x in at.caption)
+
+
+def test_integrated_map_can_hide_papers_and_keep_inspectable_paths(tmp_path, monkeypatch, researchers):
+    rendered = []
+    def record_map(graph, path=None, **kwargs):
+        rendered.append((graph, path))
+        return graph_html(graph, path, **kwargs)
+    monkeypatch.setattr('kgmap.visualisation.graph_html', record_map)
+    at, store = app_with_fixture(tmp_path, monkeypatch, researchers)
+    original = store.load()
+    at.radio(key='map_view').set_value('Integrated map').run()
+    assert at.toggle(key='show_papers').value
+    assert any(d['kind'] == 'publication' for _, d in rendered[-1][0].nodes(data=True))
+    at.toggle(key='show_papers').set_value(False).run()
+    assert not at.exception
+    graph, _ = rendered[-1]
+    assert all(d['kind'] != 'publication' for _, d in graph.nodes(data=True))
+    derived = next(d['id'] for *_, d in graph.edges(data=True) if d['type'] == 'PAPERS_MENTION')
+    at.selectbox(key='edge_inspector').set_value(derived).run()
+    assert not at.exception
+    assert any('Supporting papers: 1' in x.value for x in at.markdown)
+    next(x for x in at.multiselect if x.label == 'Highlight a path between two researchers').set_value(['test-a', 'test-b']).run()
+    graph, path = rendered[-1]
+    assert len(path) == 3 and all(graph.nodes[n]['kind'] != 'publication' for n in path)
+    at.toggle(key='edge_labels').set_value(True).run()
+    next(x for x in at.multiselect if x.label == 'Relationship types').set_value(['PAPERS_MENTION']).run()
+    assert not at.exception
+    assert all(d['type'] == 'PAPERS_MENTION' for *_, d in rendered[-1][0].edges(data=True))
+    at.toggle(key='show_papers').set_value(True).run()
+    assert not at.exception
+    assert any(d['kind'] == 'publication' for _, d in rendered[-1][0].nodes(data=True))
+    assert not any(d['type'] == 'PAPERS_MENTION' for *_, d in rendered[-1][0].edges(data=True))
+    assert store.load() == original
 
 
 def test_submit_and_review_joint_work_suggestion(tmp_path, monkeypatch, researchers):

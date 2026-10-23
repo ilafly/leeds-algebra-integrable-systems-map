@@ -4,6 +4,7 @@ import html
 import json
 import math
 import re
+from collections import defaultdict
 from pathlib import Path
 
 from pyvis.network import Network
@@ -12,7 +13,7 @@ from .inspection import EdgeInspector, edge_tooltip
 
 COLORS = {"researcher": "#176B63", "publication": "#647D9D", "concept": "#C38737"}
 EDGE_COLORS = {"AUTHORED": "#74869D", "COAUTHORED_WITH": "#176B63", "DISCUSSES": "#B5AA85",
-               "RESEARCHES": "#B5AA85", "RELATED_TO": "#D0A45F", "THEMATIC_PROXIMITY": "#9A79B6"}
+               "RESEARCHES": "#B5AA85", "PAPERS_MENTION": "#B5AA85", "RELATED_TO": "#D0A45F", "THEMATIC_PROXIMITY": "#9A79B6"}
 
 
 def edge_width(attrs, highlighted=False):
@@ -29,7 +30,9 @@ def edge_width(attrs, highlighted=False):
 def graph_html(graph, path=None, snapshot=None, show_edge_labels=False):
     path = path or []
     highlighted = {frozenset([a, b]) for a, b in zip(path, path[1:])}
-    network = Network(height="500px", width="100%", bgcolor="#FAFBF8", font_color="#203631", cdn_resources="in_line", directed=False)
+    # PyVis drops parallel edges in undirected mode. Retain them and disable
+    # arrowheads explicitly so collaboration and thematic links remain distinct.
+    network = Network(height="500px", width="100%", bgcolor="#FAFBF8", font_color="#203631", cdn_resources="in_line", directed=True)
     payload = {"nodes": {}, "edges": {}}
     inspector = EdgeInspector(snapshot, graph)
     for node, attrs in graph.nodes(data=True):
@@ -40,16 +43,32 @@ def graph_html(graph, path=None, snapshot=None, show_edge_labels=False):
         network.add_node(node, label=short, title=html.escape(label), color=COLORS[kind], shape=shape, size=size,
                          borderWidth=4 if node in path else 1, font={"size": 16 if kind == "researcher" else 12})
         payload["nodes"][node] = {"label": label, "kind": kind, "details": attrs.get("details", attrs)}
+    parallel_types = defaultdict(set)
+    for a, b, attrs in graph.edges(data=True):
+        parallel_types[frozenset([a, b])].add(attrs["type"])
+    labelled = set()
     for a, b, key, attrs in graph.edges(keys=True, data=True):
         candidate = attrs.get("status") == "candidate"
         selected = frozenset([a, b]) in highlighted
         detail = inspector.describe(a, b, attrs)
         tooltip = "<br>".join(html.escape(line) for line in edge_tooltip(detail).splitlines())
+        label_group = (frozenset([a, b]), attrs["type"])
+        label = detail["short_label"] if show_edge_labels and label_group not in labelled else ""
+        labelled.add(label_group)
+        kinds = sorted(parallel_types[frozenset([a, b])])
+        smooth = {"enabled": True, "type": "dynamic"}
+        if len(kinds) > 1:
+            rank = kinds.index(attrs["type"])
+            clockwise = (rank % 2 == 0) == (str(a) < str(b))
+            smooth = {"enabled": True, "type": "curvedCW" if clockwise else "curvedCCW",
+                      "roundness": 0.18 + 0.12 * (rank // 2)}
         network.add_edge(a, b, id=key, title=tooltip,
-            label=detail["short_label"] if show_edge_labels else "", font={"size": 10, "align": "middle", "strokeWidth": 3, "strokeColor": "#FAFBF8"},
+            label=label, font={"size": 11, "face": "arial", "align": "horizontal", "multi": False,
+                              "background": "#FAFBF8", "strokeWidth": 0, "color": "#203631"},
             color="#CB4B32" if selected else EDGE_COLORS.get(attrs["type"], "#82958F"),
             width=edge_width(attrs, selected),
-            dashes=candidate, smooth={"enabled": True, "type": "dynamic"})
+            arrows={"to": {"enabled": False}, "from": {"enabled": False}, "middle": {"enabled": False}},
+            dashes=candidate, smooth=smooth)
         payload["edges"][key] = {**attrs, "inspection": detail}
     network.set_options(json.dumps({"physics": {"enabled": True, "solver": "forceAtlas2Based",
         "forceAtlas2Based": {"gravitationalConstant": -65, "centralGravity": 0.015, "springLength": 125, "springConstant": 0.045},

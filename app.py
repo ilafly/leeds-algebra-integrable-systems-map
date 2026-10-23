@@ -10,7 +10,7 @@ import streamlit.components.v1 as components
 
 from kgmap.core import ROOT, stable_id
 from kgmap.connections import thematic_candidate
-from kgmap.graph import build_graph, filtered_snapshot, graph_view, researcher_path
+from kgmap.graph import build_graph, filtered_snapshot, graph_view, researcher_path, without_publications
 from kgmap.fulltext import citation_url, document
 from kgmap.inspection import EdgeInspector, FIELD_LABELS, RELATION_LABELS, safe_source_url
 from kgmap.report import identity_rows, render_report
@@ -174,31 +174,41 @@ tabs = st.tabs(["Explore maps", "Candidate connections", "Publications", "Identi
 with tabs[0]:
     view_label = st.radio("Map view", ["Knowledge map", "Researcher network", "Integrated map"], horizontal=True, label_visibility="collapsed", key="map_view")
     view = {"Knowledge map": "knowledge", "Researcher network": "researchers", "Integrated map": "integrated"}[view_label]
+    show_papers = True
+    if view == "integrated":
+        show_papers = st.toggle("Show papers", value=True, key="show_papers",
+                                help="Hide paper nodes and connect researchers directly to topics mentioned in their papers. Supporting papers remain in the relationship inspector.")
+    map_graph = graph if show_papers else without_publications(graph)
+    if not show_papers:
+        st.caption("Papers are hidden. Researcher-topic links summarise mentions in their papers; inspect a link to read the supporting evidence. Scores still use the same publication sample.")
     left, right = st.columns([3, 2])
-    types = sorted({d["type"] for _, _, d in graph.edges(data=True)})
+    types = sorted({d["type"] for _, _, d in map_graph.edges(data=True)})
     with left:
-        selected_types = st.multiselect("Relationship types", types, default=types)
+        selected_types = st.multiselect("Relationship types", types, default=types,
+                                        format_func=lambda kind: RELATION_LABELS.get(kind, kind))
     with right:
         selected_researchers = st.multiselect("Highlight a path between two researchers", list(people),
             format_func=lambda k: people[k]["name"], max_selections=2)
     path = []
     if len(selected_researchers) == 2:
         # Honour relationship selections and threshold for path queries as well.
-        path_graph = graph_view(graph, "integrated", threshold, selected_types)
+        path_graph = graph_view(map_graph, "integrated", threshold, selected_types)
         path = researcher_path(path_graph, *selected_researchers)
         if path:
-            st.caption(" → ".join(graph.nodes[n]["label"] for n in path))
+            st.caption(" → ".join(map_graph.nodes[n]["label"] for n in path))
             if view != "integrated":
                 st.info("Select Integrated map to see the full evidence path highlighted in red.")
         else:
             st.info("No evidence path is available under the current filters.")
-    st.markdown('<div class="legend"><span>🟢 Researcher</span><span>🟦 Publication</span><span>🟠 Concept</span>'
+    paper_legend = '<span>🟦 Publication</span>' if show_papers else ''
+    text_legend = 'source text / authorship' if show_papers else 'paper topics / profile mentions'
+    st.markdown('<div class="legend"><span>🟢 Researcher</span>' + paper_legend + '<span>🟠 Concept</span>'
                 '<span style="color:#176B63">━━ Coauthorship</span><span style="color:#9A79B6">┄┄ Thematic candidate</span>'
-                '<span style="color:#B2823C">┄┄ Concept association</span><span>Thin solid: source text / authorship</span><span>Red: selected path</span></div>', unsafe_allow_html=True)
+                '<span style="color:#B2823C">┄┄ Concept association</span><span>Thin solid: ' + text_legend + '</span><span>Red: selected path</span></div>', unsafe_allow_html=True)
     st.caption("Thicker dotted lines indicate higher scores on a fixed scale across filters. Concept associations and researcher candidates use different scoring methods; hover for the exact score.")
-    shown = graph_view(graph, view, threshold, selected_types)
+    shown = graph_view(map_graph, view, threshold, selected_types)
     show_edge_labels = st.toggle("Show relationship labels", value=False, key="edge_labels",
-                                 help="Adds relationship names, paper counts or candidate scores to the links. Dense maps are easier to read with labels off.")
+                                 help="Shows plain relationship names, paper counts and candidate scores. Text fields and PDF pages are available on hover or in the inspector.")
     if shown.number_of_nodes():
         components.html(graph_html(shown, path, snapshot=visible, show_edge_labels=show_edge_labels), height=850, scrolling=False)
         st.caption(f"{shown.number_of_nodes()} nodes · {shown.number_of_edges()} edges. Hover over a link for a summary; click for an explanation, paper excerpts and score details.")
