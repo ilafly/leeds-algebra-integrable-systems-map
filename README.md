@@ -58,13 +58,6 @@ Proposed connections should be traceable to identifiable concepts, supporting pu
 
 Expert review is therefore an essential part of the methodology. The app provides tools for inspecting evidence, accepting or rejecting candidates, recording corrections and submitting missing evidence. These tools support validation; they do not demonstrate that the discovered connections have been scientifically validated. A systematic evaluation using mathematician-labelled examples, measures of missed and incorrect connections, and assessments of usefulness remains to be carried out. Accepting a candidate records a review decision without turning a similarity-based association into a theorem.
 
-### Research questions
-
-1. Can we reconstruct a useful representation of the mathematical knowledge of a local research community from publicly available research outputs?
-2. How does the intellectual structure of the community compare with its observed collaboration network?
-3. Can automated methods identify meaningful mathematical connections between researchers for whom the available sources show no prior collaboration?
-4. Which mathematical concepts act as bridges between different research directions?
-5. How might these structures evolve as new researchers, publications and collaborations are introduced?
 
 ### Scope and research status
 
