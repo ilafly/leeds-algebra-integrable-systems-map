@@ -1,12 +1,92 @@
 # Leeds Algebra and Integrable Systems Knowledge Map
 
-A working local research prototype for finding evidence-based mathematical connections across the Leeds algebra and integrable systems research community. The original three-person pilot has been expanded to **15 researchers** in `config/researchers.toml`. Python 3.11+, Streamlit, NetworkX, SQLite and PyVis; no paid AI API, model download or graph database.
+A research prototype investigating how mathematical knowledge and scientific collaboration can be studied together within a local scientific community. The project combines automatic discovery from research outputs with source inspection and expert review. Its initial case study is the Leeds Algebra and Integrable Systems group at the University of Leeds.
+
+## Scientific motivation and conceptual framework
+
+### Two interconnected structures
+
+Research communities are organised around the knowledge they produce and the relationships between the people who produce it. These structures do not necessarily coincide. Researchers may work on closely related mathematical problems without having collaborated, while established collaborators may bring different methods and perspectives to a shared project.
+
+This project asks whether combining a **mathematical knowledge graph** with a **social collaboration network** can give a richer account of a scientific community and suggest connections that are not apparent from its existing collaborations. The aim is to understand how research directions coexist, interact and potentially complement one another. It is not to rank individual researchers or measure research performance.
+
+The framework draws on work on knowledge graphs (Hogan et al., 2021), scientific collaboration networks (Newman, 2001) and multilayer networks (Kivelä et al., 2014). The distinction between kinds of relationship remains essential when bringing these perspectives together.
+
+### Leeds as a local scientific community
+
+The Leeds Algebra and Integrable Systems group provides a bounded local case study embedded in a wider scientific network. A shared organisational setting makes the sample manageable and gives researchers a context in which to interpret proposed connections and assess their mathematical usefulness.
+
+The community's boundaries are organisational rather than intellectual. Its members collaborate internationally, and the concepts relevant to their work extend beyond the group. The configured roster is a research sample that includes former and joint affiliations, rather than a directory of current Leeds employees. Studying this local community therefore does not assume that its mathematical interests or professional relationships form a closed network.
+
+### The mathematical knowledge graph
+
+A knowledge graph represents things and the relationships between them. In the mathematical component, the things of interest are concepts, theories, methods and problems. These are represented by points, called **nodes**, while named links, called **edges**, describe their relationships.
+
+A relationship can be written as a semantic triple: **Subject — Predicate — Object**. For example, one mathematical structure may *generalise* another, a theorem may *concern* a class of objects, or a method may be *used to investigate* a problem. These examples describe the kinds of explicit mathematical relationships the research programme aims to represent.
+
+The current implementation constructs a lightweight graph by extracting mathematical terminology from publications and research descriptions and normalising spelling and terminology variants. Its automatically generated links between concepts record candidate associations based on their occurrence in the same publications. **A textual association is distinct from an established mathematical relationship.** Similar language or shared terminology does not establish a generalisation, implication or applicable method.
+
+A domain ontology—a controlled vocabulary with explicit definitions of concepts and relationship types—is a longer-term goal. The present terminology vocabulary helps recognise terms; it does not supply mathematical relationships. Automatic extraction of theorems and their logical relationships is not implemented.
+
+### The social collaboration network
+
+The social component represents researchers as nodes and documented collaborations as edges. Social network analysis studies patterns in these relationships: for example, which researchers are connected through collaborators, which form closely connected groups, and which link different parts of a community.
+
+The prototype currently records coauthorship from publication metadata and reports shared external collaborators where stable author identifiers are available. Participation in joint projects and other documented forms of scientific collaboration would extend this evidence in future work. A submitted suggestion about joint work remains a contribution for review until its evidence is incorporated.
+
+An absent collaboration edge means that no collaboration was recovered from the available sample. It does not establish that two researchers have never worked together, nor that they lack shared interests. Coauthorship is evidence of a social relationship; it does not by itself establish mathematical similarity.
+
+### Connecting knowledge and collaboration
+
+The integrated graph connects three principal kinds of entity:
+
+- **Researchers**, representing members of the scientific community.
+- **Publications**, providing documented evidence of research activity.
+- **Mathematical concepts**, representing terminology extracted from that activity.
+
+Authorship connects researchers to publications, and concept extraction connects publications to mathematical topics. For example, two researchers' separate publications may discuss the same concept, providing an inspectable path between them even when the sample contains no joint paper. Every step has a different meaning: authorship, a topic mention and a candidate concept association must be interpreted accordingly.
+
+This supports a comparison between **social proximity**, currently described through recorded coauthorship and shared collaborators, and **intellectual proximity**, estimated through shared topics, associations between topics and similarities between independent papers. The current thematic score keeps coauthorship separate from its mathematical signals.
+
+Researchers with few observed social links may share mathematical interests, while collaborators may connect distinct mathematical areas. Inspecting paths through the integrated graph is intended to suggest shared structures, potential bridges between research directions and opportunities for collaboration. Such a path supplies a reason to investigate a connection; its mathematical significance requires expert judgement.
+
+### Automatic discovery and expert validation
+
+The research task is to discover useful candidate relationships from evidence, explain them and assess them with mathematicians. The maps provide a way to inspect that process. The prototype already combines automatic concept extraction, terminology normalisation, text similarity and paths through concept associations to generate candidates. Its current thematic arcs require at least one shared extracted topic.
+
+Proposed connections should be traceable to identifiable concepts, supporting publications and source excerpts, including PDF page evidence where available. The system distinguishes bibliographic evidence, automatically extracted terminology and computational hypotheses. A concept mentioned in background discussion may not describe an author's own contribution, and a high similarity score may have little mathematical significance.
+
+Expert review is therefore an essential part of the methodology. The app provides tools for inspecting evidence, accepting or rejecting candidates, recording corrections and submitting missing evidence. These tools support validation; they do not demonstrate that the discovered connections have been scientifically validated. A systematic evaluation using mathematician-labelled examples, measures of missed and incorrect connections, and assessments of usefulness remains to be carried out. Accepting a candidate records a review decision without turning a similarity-based association into a theorem.
+
+### Research questions
+
+1. Can we reconstruct a useful representation of the mathematical knowledge of a local research community from publicly available research outputs?
+2. How does the intellectual structure of the community compare with its observed collaboration network?
+3. Can automated methods identify meaningful mathematical connections between researchers for whom the available sources show no prior collaboration?
+4. Which mathematical concepts act as bridges between different research directions?
+5. How might these structures evolve as new researchers, publications and collaborations are introduced?
+
+### Scope and research status
+
+The maps represent relationships recoverable from the available sources, rather than the complete mathematical knowledge or professional relationships of individuals. Publication metadata may be incomplete, identities may be ambiguous and mathematical terminology may have several meanings. The project prioritises provenance, interpretability, reproducibility and human validation in handling these limitations.
+
+The current prototype supports evidence collection, candidate discovery, graph exploration and review. A formal domain ontology, explicit supported mathematical assertions, broader collaboration-network analysis such as community detection, and systematic studies of change over time remain research goals. Date filters and repeatable collection provide useful tools, but do not constitute a completed longitudinal study. The system is an exploratory research tool, not an authoritative assessment of researchers or scientific communities.
+
+### References
+
+- Hogan, A. et al. (2021). *Knowledge Graphs*. ACM Computing Surveys, 54(4), Article 71. [https://doi.org/10.1145/3447772](https://doi.org/10.1145/3447772)
+- Newman, M. E. J. (2001). *The structure of scientific collaboration networks*. Proceedings of the National Academy of Sciences, 98(2), 404–409. [https://doi.org/10.1073/pnas.98.2.404](https://doi.org/10.1073/pnas.98.2.404)
+- Kivelä, M. et al. (2014). *Multilayer networks*. Journal of Complex Networks, 2(3), 203–271. [https://doi.org/10.1093/comnet/cnu016](https://doi.org/10.1093/comnet/cnu016)
+
+## Current prototype
+
+The original three-person pilot has been expanded to **15 researchers** in `config/researchers.toml`. Python 3.11+, Streamlit, NetworkX, SQLite and PyVis; no paid AI API, model download or graph database.
 
 The included dataset uses **453 publication records in discovery, 395 with abstracts**, collected through verified identities, OpenAlex, ORCID, Crossref and arXiv. A total of 480 identifier-deduplicated records are retained; 27 are quarantined pending independent authorship corroboration. The system scores all 105 researcher pairs; thematic arcs and candidate listings require at least one shared extracted topic. The [evidence report](reports/discovered_connections.md) contains the current topic count, coverage, possible duplicate versions and uncertainty. Fourteen ORCIDs are independently corroborated; Oleg Chalykh's ORCID remains explicitly labelled OpenAlex-reported. The roster includes former and joint affiliations and is not a current Leeds employment directory.
 
 Full-text analysis adds page-linked topic evidence and a separate body-text similarity signal. The first balanced sample of **30 attempted papers** yielded **28 usable PDFs, covering all 15 researchers and 842 pages**, with 156 page-linked topic mentions. Successful coverage and the two access failures are listed in the [evidence report](reports/discovered_connections.md). PDFs and extracted pages remain local in `data/fulltext/`, outside Git. The app can switch back to the title, abstract and profile baseline.
 
-Validation includes ingestion and Unicode name safeguards, graph construction, filters, persistent reviews, batched metadata lookup, PDF extraction safeguards and exclusion of uncorroborated authorship. The actual Streamlit app executes all three map views with the expanded dataset and filters for the new researchers. Its original HTTP health check returned `ok`. Canvas rendering and physical graph clicks have not been visually verified.
+Software checks cover ingestion and Unicode name safeguards, graph construction, filters, persistent reviews, batched metadata lookup, PDF extraction safeguards and exclusion of uncorroborated authorship. The actual Streamlit app executes all three map views with the expanded dataset and filters for the new researchers. Its original HTTP health check returned `ok`. Canvas rendering and physical graph clicks have not been visually verified.
 
 ## Launch
 
