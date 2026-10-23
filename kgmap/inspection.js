@@ -27,7 +27,9 @@
     const location = item.field + (item.page ? ' · PDF page ' + item.page : '');
     node('div', item.topic + ' · ' + location, parent, 'evidence-location');
     node('blockquote', item.text, parent);
-    link(parent, 'Read this source' + (item.page ? ' at page ' + item.page : ''), item.url);
+    if (item.url.startsWith('upload:'))
+      node('div', 'Uploaded PDF · download this paper from Publications.', parent, 'inspection-note');
+    else link(parent, 'Read this source' + (item.page ? ' at page ' + item.page : ''), item.url);
   }
   function rawRecord(parent, record) {
     const details = node('details', null, parent);

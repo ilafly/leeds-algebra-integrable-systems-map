@@ -132,7 +132,8 @@ def extract_pdf(body, publication, options=None):
     front = normalise(" ".join(p["text"] for p in pages[:2]))
     title = {t for t in normalise(publication["title"]).split() if len(t) > 2 and t not in {"the", "and", "for", "with", "from", "mathrm", "mathfrak"}}
     match = sum(t in front.split() for t in title) / len(title) if title else 0
-    if match < 0.65:
+    has_text = any(p["text"].strip() for p in pages)
+    if match < 0.65 and has_text and not options.get("allow_unmatched_title", False):
         raise SourceError(f"PDF title could not be corroborated (token coverage {match:.2f})")
     line_counts = Counter(line.strip() for page in pages for line in set(page["text"].splitlines()) if line.strip())
     repeated = {line for line, n in line_counts.items() if len(pages) >= 4 and n >= max(3, len(pages) * 0.6) and len(line) < 160}
@@ -153,6 +154,8 @@ def extract_pdf(body, publication, options=None):
     body_words = sum(len(p["analysis_text"].split()) for p in pages)
     text_pages = sum(len(p["text"].strip()) >= 50 for p in pages)
     status = "ready" if body_words >= options.get("min_words", 200) and text_pages >= len(pages) * 0.7 else "needs_ocr_or_review"
+    if match < 0.65 and status == "ready":
+        status = "needs_title_review"
     return {"publication_id": publication["id"], "pages": pages, "page_count": len(pages),
             "body_word_count": body_words, "text_pages": text_pages, "status": status,
             "title_token_coverage": round(match, 3), "references_excluded": references,
@@ -190,6 +193,12 @@ def body_text(p):
     return "\n".join(page["analysis_text"] for page in doc["pages"]) if doc else ""
 
 
+def citation_url(p):
+    """Use the publication record when a private uploaded PDF has no public URL."""
+    source = p.get("full_text", {}).get("source_url", "")
+    return source if urlsplit(source).scheme in {"http", "https"} else p["url"]
+
+
 def restore_cached_text(publications):
     for p in publications:
         path = CACHE_ROOT / (artifact_key(p) + ".json")
@@ -211,12 +220,13 @@ def retrieve_full_text(publications, researchers, http, options=None, limit=30):
         log.info("Full text %d/%d: %s", i, len(chosen), p["title"][:85])
         key = artifact_key(p)
         path = CACHE_ROOT / (key + ".json")
-        if path.exists() and not http.refresh:
+        if path.exists():
             try:
                 data = json.loads(path.read_text(encoding="utf-8"))
             except (OSError, ValueError):
                 data = {}
-            if data.get("publication_id") == p["id"] and data.get("method") == EXTRACTOR_VERSION:
+            if (data.get("publication_id") == p["id"] and data.get("method") == EXTRACTOR_VERSION
+                    and (not http.refresh or data.get("origin") == "upload")):
                 p["full_text"] = {k: v for k, v in data.items() if k != "pages"}
                 counts[p["full_text"]["status"]] += 1
                 continue

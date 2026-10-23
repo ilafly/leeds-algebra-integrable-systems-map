@@ -11,11 +11,12 @@ import streamlit.components.v1 as components
 from kgmap.core import ROOT, stable_id
 from kgmap.connections import thematic_candidate
 from kgmap.graph import build_graph, filtered_snapshot, graph_view, researcher_path
-from kgmap.fulltext import document
+from kgmap.fulltext import citation_url, document
 from kgmap.inspection import EdgeInspector, FIELD_LABELS, RELATION_LABELS, safe_source_url
 from kgmap.report import identity_rows, render_report
 from kgmap.store import Store
 from kgmap.suggestion_ui import render_suggestions
+from kgmap.upload_ui import download_publication_pdf, render_pdf_upload
 from kgmap.visualisation import graph_html
 
 st.set_page_config(page_title="Leeds · Mathematical connections", page_icon="◈", layout="wide")
@@ -42,15 +43,22 @@ def publication_details(p, mentions, concepts, context):
     with st.expander("Full text and page evidence"):
         if doc:
             st.caption(f"{doc['page_count']} PDF pages · {doc['body_word_count']:,} analysis words · {doc.get('version') or 'version not supplied'} · licence: {doc.get('license') or 'not specified by source'}")
+            if doc.get("origin") == "upload":
+                st.caption("Uploaded file: " + doc["filename"])
             page = st.selectbox("PDF page", [page["page"] for page in doc["pages"]], key="fullpage_" + context + p["id"])
             selected_page = next(item for item in doc["pages"] if item["page"] == page)
-            st.link_button("Open source PDF at this page ↗", doc["source_url"].split("#")[0] + "#page=" + str(page))
+            if safe_source_url(doc["source_url"]):
+                st.link_button("Open source PDF at this page ↗", doc["source_url"].split("#")[0] + "#page=" + str(page))
+            else:
+                st.caption("Source: uploaded PDF. Download it from this paper's Publications entry.")
             st.text(selected_page["text"])
             st.caption("Analysis omits detected bibliography content and repeated page headers. Formulas and reading order may be imperfect; extracted text is not a mathematical assertion.")
         else:
             st.caption("Full text: " + p.get("full_text", {}).get("status", "not yet retrieved") + ". A ready record also requires its local text cache.")
             if p.get("full_text", {}).get("attempts"):
                 st.json(p["full_text"]["attempts"])
+        if context == "publication_":
+            download_publication_pdf(p, context)
     with st.expander("Metadata and provenance"):
         st.json(p)
 
@@ -87,6 +95,8 @@ def relationship_details(info, edge):
         st.text(item["text"])
         if safe_source_url(item["url"]):
             st.link_button("Read this source" + (f" at page {item['page']}" if item["page"] else ""), item["url"])
+        elif item["url"].startswith("upload:"):
+            st.caption("Uploaded PDF · download this paper from Publications.")
 
     if info["excerpt"]:
         show_excerpt(info["excerpt"])
@@ -274,8 +284,10 @@ with tabs[1]:
                 for pair in c["full_text_pairs"]:
                     p, q = pub_lookup[pair["left"]], pub_lookup[pair["right"]]
                     st.write(f"Full-text cosine similarity {pair['similarity']:.3f}")
-                    st.link_button(p["title"], p["full_text"]["source_url"])
-                    st.link_button(q["title"], q["full_text"]["source_url"])
+                    st.link_button(p["title"], citation_url(p))
+                    st.link_button(q["title"], citation_url(q))
+                    if any(item.get("full_text", {}).get("origin") == "upload" for item in (p, q)):
+                        st.caption("This comparison includes an uploaded PDF, available to download in Publications.")
                 st.caption("This compares extracted paper bodies, excluding detected references. It is language evidence, not proof of a mathematical relationship.")
             if any(c.get("full_text_coverage", {}).values()):
                 st.caption("Full-text coverage for this pair: " + "; ".join(people[rid]["name"] + ": " + str(n) for rid, n in c["full_text_coverage"].items()))
@@ -292,6 +304,8 @@ with tabs[1]:
 
 with tabs[2]:
     st.subheader("Publication evidence")
+    with st.expander("Upload a missing PDF"):
+        render_pdf_upload(store, snapshot)
     query = st.text_input("Search titles, abstracts, authors or cached full text")
     from kgmap.fulltext import body_text
     records = [p for p in visible["publications"] if not query or query.casefold() in

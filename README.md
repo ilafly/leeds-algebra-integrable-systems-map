@@ -19,7 +19,7 @@ python -m pip install -r requirements.txt
 python -m streamlit run app.py
 ```
 
-Open **http://127.0.0.1:8501**. The included `data/snapshot.json` is a real, retrieved dataset, so the application works without research API access. Full-text evidence additionally requires its local `data/fulltext/` cache; a checkout without that cache automatically recomputes the app view from available metadata. Use the virtual environment for PDF extraction, which requires `pypdf`. The app binds to loopback and does not collect metadata on page load.
+Open **http://127.0.0.1:8501**. The included `data/snapshot.json` is a real, retrieved dataset, so the application works without research API access. Full-text evidence additionally requires its local `data/fulltext/` cache; a checkout without that cache automatically recomputes the app view from available metadata. Uploaded originals and suggestion attachments also need `data/uploads/` for downloads. Use the virtual environment for PDF extraction, which requires `pypdf`. The app binds to loopback and does not collect metadata on page load.
 
 ## Collect and reproduce
 
@@ -63,7 +63,15 @@ If OpenAlex requires a free API key in your environment, set `OPENALEX_API_KEY` 
 
 The full-text stage uses OpenAlex's source-supplied open-access PDF locations and exact arXiv identifiers already attached to verified publications. It skips quarantined and retracted records and tries at most three locations per selected paper. There is no paywall bypass or name-based paper matching. Attempts are selected round robin, recent first, without choosing a joint record twice. A balance of attempts cannot guarantee equal successful coverage. `[full_text]` configures the default sample and limits (20 MB, 200 pages, at least 200 body words). Oversized papers are reported rather than silently truncated.
 
-`pypdf` extracts every page and corroborates the title against the first two pages. The analysis removes detected reference sections, subsequent content and repeated short headers; original page text is retained for inspection. Image-only or very sparse extractions are marked `needs_ocr_or_review` and excluded. No OCR runs automatically. PDF reading order, formulas, word spacing and undetected bibliographies remain limitations. Each ready document records its source, version/licence when supplied, SHA-256, extraction method and retrieval times. Existing successful artifacts are reused without network access and retained across metadata refreshes; `fulltext --refresh` retries their sources. `--offline` uses only cached responses and artifacts.
+`pypdf` extracts every page and corroborates the title against the first two pages. The analysis removes detected reference sections, subsequent content and repeated short headers; original page text is retained for inspection. Image-only or very sparse extractions are marked `needs_ocr_or_review` and excluded. No OCR runs automatically. PDF reading order, formulas, word spacing and undetected bibliographies remain limitations. Each ready document records its source, version/licence when supplied, SHA-256, extraction method and retrieval times. Existing successful artifacts are reused without network access and retained across metadata refreshes; `fulltext --refresh` retries public sources while preserving uploaded files. `--offline` uses only cached responses and artifacts.
+
+## Upload missing PDFs
+
+In **Publications → Upload a missing PDF**, select the existing publication, choose a PDF and click **Upload PDF and update analysis**. The list includes failed downloads, papers not yet attempted, and records whose local PDF or usable text is missing. Files are limited to 20 MB and 200 pages by default. A readable PDF must match the selected publication's title before its text is analysed. Usable text updates topic evidence, similarity scores and the report; scans are saved for OCR or review and excluded from analysis. An identical file can restore a lost original without duplicating the upload history. Uploading a file preserves the publication's existing identifiers, authorship and review decisions.
+
+For a paper missing from the map entirely, attach its PDF to a **Suggestions** submission. The file remains pending for review; it does not create a verified publication or coauthorship relationship. A reviewer can use **Use attachment for a paper already in the map** to match it to an existing eligible record, with another title check before analysis.
+
+Uploaded originals use content hashes as filenames under the Git-ignored `data/uploads/` directory. The active paper's extracted pages live in `data/fulltext/`; the snapshot holds only provenance and short evidence snippets. Uploaded sources retain their filename, SHA-256, upload time and explicit upload origin. The app offers **Download cached PDF** in a paper's **Full text and page evidence** expander, and **Download attached PDF** in the suggestion queue. Back up both directories and `data/map.sqlite` to preserve the files, extracted text, suggestions and reviews together.
 
 ## Explore
 
@@ -149,9 +157,9 @@ Import validates the complete file before changing any decisions. Reviews are ke
 
 ## Suggestions
 
-Open **Suggestions**, choose a type, select the researchers involved, and add a title and explanation. A **Joint work** suggestion needs at least two researchers in this map and a source URL or DOI. Selecting an existing paper can supply the source. Use **Missing paper** for a paper involving one researcher in the map and external coauthors. The contributor's name is optional. Invalid submissions keep the draft available for correction.
+Open **Suggestions**, choose a type, select the researchers involved, and add a title and explanation. A **Joint work** suggestion needs at least two researchers in this map and a source URL, DOI, attached PDF or existing paper. Use **Missing paper** for a paper involving one researcher in the map and external coauthors. The contributor's name is optional. Invalid submissions keep the draft available for correction.
 
-The queue can be filtered by researcher and status: pending, under review, accepted for follow-up, resolved or rejected. Add a review note when resolving or rejecting a suggestion. The original submission and every review event remain in its history; **Export all suggestions** downloads the queue as JSON. Accepted means ready for follow-up. Incorporating the checked evidence into the map remains a collection/analysis or vocabulary-editing step; suggestion status changes do not add verified authorship or alter scores automatically.
+The queue can be filtered by researcher and status: pending, under review, accepted for follow-up, resolved or rejected. Add a review note when resolving or rejecting a suggestion. The original submission and every review event remain in its history; **Export all suggestions** downloads the queue as JSON, including attachment metadata. Download PDF attachments separately. Accepted means ready for follow-up. A checked PDF can be analysed against an existing publication through the attachment controls. New bibliographic records and terminology changes still need collection or vocabulary editing; suggestion status changes do not add verified authorship or alter scores automatically.
 
 Suggestions are stored independently of the research snapshot in the app's local SQLite database, so collection and analysis refreshes preserve them. People using the same running app share this queue. Separate installations keep their own queues; the JSON export provides a portable copy. Suggestions stay outside the portable scientific snapshot and the evidence report until their evidence is incorporated.
 
@@ -165,6 +173,8 @@ kgmap/cli.py                     Reproducible collection / analysis / report com
 kgmap/sources.py                 Profile, OpenAlex, ORCID, Crossref, arXiv and deduplication
 kgmap/http.py                    Paced, retrying HTTP with SQLite cache and provenance log
 kgmap/fulltext.py                Public PDF retrieval, title checks and page-aware extraction
+kgmap/uploads.py                 Local PDF validation, provenance, storage and analysis
+kgmap/upload_ui.py               Missing-PDF uploads, downloads and attachment matching
 kgmap/concepts.py                Phrase extraction, normalisation and TF-IDF
 kgmap/connections.py             Explained candidate ranking and collaboration evidence
 kgmap/graph.py                   NetworkX graph, filtered recomputation and evidence paths
@@ -177,6 +187,7 @@ kgmap/inspection.js              Safe, structured graph click inspector
 data/snapshot.json               Portable real-data snapshot
 data/map.sqlite                  Local cache and reviews (Git ignored)
 data/fulltext/                   Original PDFs and page text JSON (local, Git ignored)
+data/uploads/                    Uploaded PDFs and suggestion attachments (local, Git ignored)
 reports/researcher_identities.csv Identity verification table
 reports/discovered_connections.md Automatically generated evidence report and source issues
 tests/                          Synthetic unit fixtures only; not demonstration app data

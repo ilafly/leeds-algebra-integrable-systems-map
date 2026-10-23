@@ -120,6 +120,8 @@ class EdgeInspector:
                     ids.extend([left["id"], right["id"]])
                     def citation(p):
                         url = p.get("full_text", {}).get("source_url") if key == "full_text_pairs" else None
+                        if not safe_source_url(url):
+                            url = p["url"]
                         return {"title": p["title"], "url": url or p["url"]}
                     comparisons.append({"label": label, "similarity": pair["similarity"], "left": citation(left), "right": citation(right)})
             ids.extend(edge.get("joint_publications", []))

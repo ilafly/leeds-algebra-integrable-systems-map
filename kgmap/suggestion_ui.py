@@ -8,6 +8,9 @@ import streamlit as st
 
 from .inspection import safe_source_url
 from .suggestions import KINDS, STATUSES
+from .core import load_config
+from .http import SourceError
+from .upload_ui import render_suggestion_pdf
 
 
 def render_suggestions(store, snapshot):
@@ -20,10 +23,19 @@ def render_suggestions(store, snapshot):
         for key in ["suggestion_kind", "suggestion_title", "suggestion_people", "suggestion_publication",
                     "suggestion_source", "suggestion_note"]:
             st.session_state.pop(key, None)
+        st.session_state["suggestion_pdf_epoch"] = st.session_state.get("suggestion_pdf_epoch", 0) + 1
     if st.session_state.pop("suggestion_saved", False):
         st.success("Suggestion saved. It is now in the review queue.")
     if st.session_state.pop("suggestion_review_saved", False):
         st.success("Suggestion review saved.")
+    used = st.session_state.pop("suggestion_pdf_used", None)
+    if used:
+        if used["status"] == "ready":
+            st.success("Attachment saved to its publication record. Its text is available to the analysis.")
+        else:
+            st.info("Attachment saved for OCR or review; its text is not indexed yet.")
+        if used.get("export_warning"):
+            st.warning(used["export_warning"])
 
     with st.form("suggestion_form"):
         st.markdown("**Add a suggestion**")
@@ -34,21 +46,26 @@ def render_suggestions(store, snapshot):
         pid = st.selectbox("Existing paper (optional)", [None, *pubs], key="suggestion_publication",
                            format_func=lambda x: "No existing paper" if x is None else pubs[x]["title"])
         source = st.text_input("Source URL or DOI", max_chars=2000, key="suggestion_source",
-                               help="Joint-work suggestions need a source. Selecting an existing paper supplies its source if this field is empty.")
+                               help="Joint-work suggestions need a URL, DOI, attached PDF or an existing paper.")
+        pdf = st.file_uploader("Attach a PDF (optional)", type=["pdf"],
+                               key="suggestion_pdf_" + str(st.session_state.get("suggestion_pdf_epoch", 0)),
+                               help="The PDF stays with this suggestion for review. Files up to 20 MB are supported.")
         note = st.text_area("What should we add or correct?", max_chars=5000, key="suggestion_note")
         submitter = st.text_input("Your name (optional)", max_chars=120, key="suggestion_submitter")
         submitted = st.form_submit_button("Submit suggestion", type="primary")
     if submitted:
         try:
             record = store.add_suggestion({"kind": kind, "title": title, "researcher_ids": rids,
-                "publication_id": pid, "source": source, "note": note, "submitter": submitter})
+                "publication_id": pid, "source": source, "note": note, "submitter": submitter},
+                attachment={"filename": pdf.name, "body": pdf.getvalue()} if pdf is not None else None,
+                pdf_options=load_config().get("full_text"))
             st.session_state["suggestion_saved"] = True
             st.session_state["suggestion_reset_form"] = True
             st.session_state["suggestion_record"] = record["id"]
             st.session_state["suggestion_status_filter"] = "all"
             st.session_state["suggestion_person_filter"] = None
             st.rerun()
-        except ValueError as exc:
+        except (ValueError, SourceError, OSError, ImportError) as exc:
             st.error(str(exc))
 
     records = store.suggestions()
@@ -84,6 +101,7 @@ def render_suggestions(store, snapshot):
             st.caption("Existing paper: " + record["publication_title"])
         if safe_source_url(record["source_url"]):
             st.link_button("Open suggested source", record["source_url"])
+        render_suggestion_pdf(store, record, snapshot)
         with st.form("suggestion_review_" + sid):
             status = st.selectbox("Review suggestion", list(STATUSES), index=list(STATUSES).index(record["status"]),
                                   format_func=STATUSES.get, key="suggestion_review_status_" + sid)

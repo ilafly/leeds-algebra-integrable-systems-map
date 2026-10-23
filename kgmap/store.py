@@ -72,12 +72,19 @@ class Store:
             rows = db.execute("SELECT payload FROM suggestions ORDER BY created_at DESC, id").fetchall()
         return [json.loads(row[0]) for row in rows]
 
-    def add_suggestion(self, data):
+    def add_suggestion(self, data, attachment=None, pdf_options=None):
         from .suggestions import validate_suggestion
         snapshot = self.load()
         if not snapshot:
             raise ValueError("Load a research map before submitting a suggestion.")
-        clean = validate_suggestion(data, snapshot)
+        clean = validate_suggestion(data, snapshot, has_attachment=attachment is not None)
+        if attachment is not None:
+            from .uploads import prepare_pdf, save_pdf, summary
+            doc = prepare_pdf(attachment["body"], attachment["filename"],
+                              {"id": "suggested-paper", "title": clean["title"]}, pdf_options, for_review=True)
+            save_pdf(attachment["body"], doc)
+            clean["attachment"] = summary(doc)
+            clean["attachment"].pop("publication_id", None)
         now, sid = utcnow(), "suggestion:" + uuid.uuid4().hex
         record = {**clean, "id": sid, "status": "pending", "review_note": "",
                   "created_at": now, "updated_at": now,

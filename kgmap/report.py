@@ -5,7 +5,7 @@ from collections import Counter
 import pandas as pd
 
 from .core import ROOT
-from .fulltext import document
+from .fulltext import citation_url, document
 from .connections import thematic_candidate
 
 
@@ -42,7 +42,7 @@ def render_report(snapshot, reviews=None):
     without_shared = sum(not c["shared_concepts"] for c in snapshot["connections"])
     providers = Counter(prov["provider"] for p in pubs.values() for prov in p["provenance"])
     parts = ["# Leeds Algebra and Integrable Systems — pilot evidence report", "",
-        f"Generated: {snapshot['generated_at']}. Data: real retrieved public metadata and available local public-paper text; no demonstration records.", "",
+        f"Generated: {snapshot['generated_at']}. Data: real retrieved public metadata and available local paper text; no demonstration records.", "",
         "## Researcher identity verification", "", markdown_table(identity_rows(snapshot),
             ["Researcher", "Affiliation", "Affiliation context", "Affiliation source", "Status", "OpenAlex", "ORCID", "Reported ORCID", "ORCID basis", "Basis", "Sources"]), "",
         "Identity verification here means bibliographic identity corroboration, not independent validation of every publication in a provider's author cluster. The Leeds roster is a research context including former or joint affiliations, not a current employment directory.", "",
@@ -63,15 +63,16 @@ def render_report(snapshot, reviews=None):
         + (f"The latest retrieval selected {last_full['attempted']} papers by researcher round robin, recent first; results: "
            + ", ".join(f"{status}: {count}" for status, count in last_full.get("status_counts", {}).items()) + ". " if last_full else "")
         + "Selection balances attempts, not successful downloads; joint papers may cover multiple researchers. Missing text contributes no full-text similarity.", "",
-        "Only source-supplied open-access PDF locations and exact arXiv identifiers are attempted, subject to robots rules and crawl delays. "
+        "Public retrieval uses source-supplied open-access PDF locations and exact arXiv identifiers, subject to robots rules and crawl delays. "
+        "Users can also supply missing PDFs; these retain an upload origin, filename and SHA-256 rather than being labelled as public retrievals. "
         "PDF titles are corroborated before indexing; image-only or poor extractions are held for OCR/review. "
-        "Original PDFs and page text stay in the Git-ignored data/fulltext directory. The portable snapshot carries retrieval provenance and short evidence snippets. "
+        "Original PDFs and page text stay in Git-ignored data/fulltext and data/uploads directories. The portable snapshot carries provenance and short evidence snippets. "
         "Detected bibliography headings and repeated page headers are excluded from the analysis; appendices after the bibliography are also omitted. "
         "Undetected bibliographies, broken formulas and reading order can affect results. Page topic mentions may describe background work; they do not establish expertise or mathematical implications.", "",
         markdown_table([{"Paper": f"[{p['title']}]({p['url']})", "Status": p["full_text"]["status"],
                          "Pages": p["full_text"].get("page_count", ""), "Analysis words": p["full_text"].get("body_word_count", ""),
                          "Bibliography cut": p["full_text"].get("references_excluded", ""),
-                         "PDF source": p["full_text"].get("source_url", ""),
+                         "PDF source": ("Uploaded PDF: " + p["full_text"]["filename"] if p["full_text"].get("origin") == "upload" else p["full_text"].get("source_url", "")),
                          "Version": p["full_text"].get("version") or "not supplied",
                          "Licence": p["full_text"].get("license") or "not supplied",
                          "Attempt issues": " ; ".join(a["error"] for a in p["full_text"].get("attempts", []))}
@@ -118,7 +119,8 @@ def render_report(snapshot, reviews=None):
             parts += ["", "Independent full-text comparisons:", ""]
             for pair in c["full_text_pairs"]:
                 left, right = pubs[pair["left"]], pubs[pair["right"]]
-                parts += [f"- {pair['similarity']:.3f}: [{left['title']}]({left['full_text']['source_url']}) ↔ [{right['title']}]({right['full_text']['source_url']})."]
+                parts += [f"- {pair['similarity']:.3f}: [{left['title']}]({citation_url(left)}) ↔ [{right['title']}]({citation_url(right)})."
+                          + (" Includes a locally uploaded PDF." if any(p.get("full_text", {}).get("origin") == "upload" for p in (left, right)) else "")]
         parts += ["", "Supporting publications and explicit terminology evidence:", ""]
         shared_set = set(c["shared_concepts"])
         for pid in c["supporting_publications"]:
@@ -131,7 +133,9 @@ def render_report(snapshot, reviews=None):
                 parts[-1] += "Matched topics: " + ", ".join(sorted({concepts[m["concept"]]["label"] for m in matches})) + "."
                 page_matches = [m for m in matches if m["field"] == "full_text"]
                 if page_matches:
-                    parts[-1] += " PDF evidence: " + ", ".join(f"[{concepts[m['concept']]['label']}, p. {m['page']}]({m['source']})" for m in page_matches) + "."
+                    parts[-1] += " PDF evidence: " + ", ".join(
+                        f"{concepts[m['concept']]['label']}, p. {m['page']} (uploaded PDF)" if m["source"].startswith("upload:")
+                        else f"[{concepts[m['concept']]['label']}, p. {m['page']}]({m['source']})" for m in page_matches) + "."
         parts += [""]
     duplicates = snapshot.get("collection", {}).get("possible_duplicate_title_groups", [])
     parts += ["## Possible unlinked versions", "",

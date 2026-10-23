@@ -1,6 +1,6 @@
 # Leeds Algebra and Integrable Systems — pilot evidence report
 
-Generated: 2026-10-22T21:57:57+00:00. Data: real retrieved public metadata and available local public-paper text; no demonstration records.
+Generated: 2026-10-22T21:57:57+00:00. Data: real retrieved public metadata and available local paper text; no demonstration records.
 
 ## Researcher identity verification
 
@@ -54,7 +54,7 @@ Metadata provenance records by provider: Crossref: 362, OpenAlex: 514, arXiv: 31
 
 28 papers have usable text in the local cache. Full text is enabled for this analysis. The latest retrieval selected 30 papers by researcher round robin, recent first; results: ready: 28, unavailable: 2. Selection balances attempts, not successful downloads; joint papers may cover multiple researchers. Missing text contributes no full-text similarity.
 
-Only source-supplied open-access PDF locations and exact arXiv identifiers are attempted, subject to robots rules and crawl delays. PDF titles are corroborated before indexing; image-only or poor extractions are held for OCR/review. Original PDFs and page text stay in the Git-ignored data/fulltext directory. The portable snapshot carries retrieval provenance and short evidence snippets. Detected bibliography headings and repeated page headers are excluded from the analysis; appendices after the bibliography are also omitted. Undetected bibliographies, broken formulas and reading order can affect results. Page topic mentions may describe background work; they do not establish expertise or mathematical implications.
+Public retrieval uses source-supplied open-access PDF locations and exact arXiv identifiers, subject to robots rules and crawl delays. Users can also supply missing PDFs; these retain an upload origin, filename and SHA-256 rather than being labelled as public retrievals. PDF titles are corroborated before indexing; image-only or poor extractions are held for OCR/review. Original PDFs and page text stay in Git-ignored data/fulltext and data/uploads directories. The portable snapshot carries provenance and short evidence snippets. Detected bibliography headings and repeated page headers are excluded from the analysis; appendices after the bibliography are also omitted. Undetected bibliographies, broken formulas and reading order can affect results. Page topic mentions may describe background work; they do not establish expertise or mathematical implications.
 
 | Paper | Status | Pages | Analysis words | Bibliography cut | PDF source | Version | Licence | Attempt issues |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |

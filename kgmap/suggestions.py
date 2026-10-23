@@ -40,7 +40,7 @@ def source_link(source):
     return source, None
 
 
-def validate_suggestion(data, snapshot):
+def validate_suggestion(data, snapshot, has_attachment=False):
     kind = data.get("kind")
     if kind not in KINDS:
         raise ValueError("Choose a suggestion type.")
@@ -63,8 +63,8 @@ def validate_suggestion(data, snapshot):
     publication = pubs.get(publication_id, {})
     source = text_field(data, "source", 2000) or publication.get("url", "")
     url, doi = source_link(source)
-    if kind == "joint_work" and not url:
-        raise ValueError("Add a source URL or DOI, or select an existing paper, for the joint work.")
+    if kind == "joint_work" and not url and not has_attachment:
+        raise ValueError("Add a source URL or DOI, attach a PDF, or select an existing paper for the joint work.")
     return {"kind": kind, "title": title, "note": note, "researcher_ids": ids,
             "researcher_names": {rid: people[rid] for rid in ids},
             "publication_id": publication_id, "publication_title": publication.get("title"),
