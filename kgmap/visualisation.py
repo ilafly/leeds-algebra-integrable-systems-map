@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html
 import json
+import math
 import re
 from pathlib import Path
 
@@ -12,6 +13,17 @@ from .inspection import EdgeInspector, edge_tooltip
 COLORS = {"researcher": "#176B63", "publication": "#647D9D", "concept": "#C38737"}
 EDGE_COLORS = {"AUTHORED": "#74869D", "COAUTHORED_WITH": "#176B63", "DISCUSSES": "#B5AA85",
                "RESEARCHES": "#B5AA85", "RELATED_TO": "#D0A45F", "THEMATIC_PROXIMITY": "#9A79B6"}
+
+
+def edge_width(attrs, highlighted=False):
+    """Use an absolute scale so filtering cannot change the same edge's width."""
+    if attrs.get("status") == "candidate":
+        score = float(attrs.get("score", attrs.get("confidence", 0)))
+        score = min(1.0, max(0.0, score)) if math.isfinite(score) else 0.0
+        width = 1.2 + 6.0 * score
+    else:
+        width = 3.0 if attrs["type"] == "COAUTHORED_WITH" else 1.3
+    return round(width + (2.0 if highlighted else 0.0), 3)
 
 
 def graph_html(graph, path=None, snapshot=None, show_edge_labels=False):
@@ -36,7 +48,7 @@ def graph_html(graph, path=None, snapshot=None, show_edge_labels=False):
         network.add_edge(a, b, id=key, title=tooltip,
             label=detail["short_label"] if show_edge_labels else "", font={"size": 10, "align": "middle", "strokeWidth": 3, "strokeColor": "#FAFBF8"},
             color="#CB4B32" if selected else EDGE_COLORS.get(attrs["type"], "#82958F"),
-            width=4 if selected else (3 if attrs["type"] == "COAUTHORED_WITH" else 1.3),
+            width=edge_width(attrs, selected),
             dashes=candidate, smooth={"enabled": True, "type": "dynamic"})
         payload["edges"][key] = {**attrs, "inspection": detail}
     network.set_options(json.dumps({"physics": {"enabled": True, "solver": "forceAtlas2Based",

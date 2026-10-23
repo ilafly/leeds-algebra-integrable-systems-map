@@ -69,6 +69,7 @@ The full-text stage uses OpenAlex's source-supplied open-access PDF locations an
 
 - **Knowledge map:** concept nodes and dashed candidate co-occurrence edges. A vocabulary match identifies terminology, not a theorem.
 - **Researcher network:** solid green coauthorship and separate dashed purple thematic proximity edges.
+- Dotted candidate links get thicker as their score increases. Width uses the fixed rule `1.2 + 6 × score` pixels on the 0–1 score range, across all filters and views. A highlighted path adds 2 pixels while preserving score differences. Concept-association and researcher scores use different heuristics; inspect the numeric score before comparing them.
 - **Integrated map:** researchers, publications and concepts joined through the original metadata and text evidence.
 - Hover over a graph link for its meaning, score and review status. Click it to see a readable explanation, supporting paper titles, source excerpts with PDF page links, and the calculation behind its score. Concept associations explain their publication counts and normalisation; researcher candidates show weighted components, shared topics, bridges and independent paper comparisons. Raw records and provenance remain available in a disclosure beneath the explanation.
 - Turn on **Show relationship labels** to put relationship names, paper counts or candidate scores on the links. Dense maps start with labels off. **Inspect a relationship** provides a searchable selector for exactly the links in the current map, respecting date, researcher, concept, relationship-type, score and review filters. It initially shows five supporting papers; **Show all supporting papers** expands the complete set.
@@ -80,6 +81,7 @@ The full-text stage uses OpenAlex's source-supplied open-access PDF locations an
 - **Publications** searches cached body text as well as metadata. Open **Full text and page evidence** to read extracted pages and follow a page-specific source PDF link. The sidebar's **Include available full text** toggle recomputes the graph and scores for comparison with the metadata baseline.
 - **Identity & sources** shows identity decisions, rejected namesakes, provider failures and HTTP cache use.
 - **Review** accepts, rejects or annotates corrections to researcher candidates, concept associations and text extractions. Rejected text extractions and associations are excluded before scores are recomputed. Review decisions remain in SQLite across refreshes. A correction note preserves the original edge for audit; reject it to exclude it, or change the vocabulary and reanalyse to correct terminology.
+- **Suggestions** records missing joint work, papers, possible connections, corrections and general feedback, with a source and a review history.
 
 The local graph embeds the graph library's JavaScript, so rendering does not require a graph CDN. Generated HTML uses text-only inspection of untrusted metadata and validates source link schemes.
 
@@ -145,6 +147,14 @@ python -m kgmap.cli import-reviews --file data/reviews.json
 
 Import validates the complete file before changing any decisions. Reviews are keyed by stable researcher pairs or source/concept/field IDs. Scores can change while a review persists; re-evaluate older reviews when the underlying evidence changes. The app exports the currently visible graph as NetworkX node-link JSON and the full dataset evidence report as Markdown.
 
+## Suggestions
+
+Open **Suggestions**, choose a type, select the researchers involved, and add a title and explanation. A **Joint work** suggestion needs at least two researchers in this map and a source URL or DOI. Selecting an existing paper can supply the source. Use **Missing paper** for a paper involving one researcher in the map and external coauthors. The contributor's name is optional. Invalid submissions keep the draft available for correction.
+
+The queue can be filtered by researcher and status: pending, under review, accepted for follow-up, resolved or rejected. Add a review note when resolving or rejecting a suggestion. The original submission and every review event remain in its history; **Export all suggestions** downloads the queue as JSON. Accepted means ready for follow-up. Incorporating the checked evidence into the map remains a collection/analysis or vocabulary-editing step; suggestion status changes do not add verified authorship or alter scores automatically.
+
+Suggestions are stored independently of the research snapshot in the app's local SQLite database, so collection and analysis refreshes preserve them. People using the same running app share this queue. Separate installations keep their own queues; the JSON export provides a portable copy. Suggestions stay outside the portable scientific snapshot and the evidence report until their evidence is incorporated.
+
 ## Files
 
 ```text
@@ -158,7 +168,9 @@ kgmap/fulltext.py                Public PDF retrieval, title checks and page-awa
 kgmap/concepts.py                Phrase extraction, normalisation and TF-IDF
 kgmap/connections.py             Explained candidate ranking and collaboration evidence
 kgmap/graph.py                   NetworkX graph, filtered recomputation and evidence paths
-kgmap/store.py                   SQLite cache, snapshot and persistent reviews
+kgmap/store.py                   SQLite cache, snapshot, reviews and suggestions
+kgmap/suggestions.py             Suggestion validation and source normalisation
+kgmap/suggestion_ui.py           Submission form, review queue, history and export
 kgmap/visualisation.py           Offline-capable interactive graph rendering
 kgmap/inspection.py              Source-grounded relationship explanations and score details
 kgmap/inspection.js              Safe, structured graph click inspector

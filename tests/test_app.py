@@ -55,3 +55,42 @@ def test_relationship_inspector_obeys_map_view_and_type_filters(tmp_path, monkey
     next(x for x in at.multiselect if x.label == 'Relationship types').set_value(['AUTHORED']).run()
     assert not at.exception
     assert any('No relationships pass' in x.value for x in at.caption)
+
+
+def test_submit_and_review_joint_work_suggestion(tmp_path, monkeypatch, researchers):
+    at, store = app_with_fixture(tmp_path, monkeypatch, researchers)
+    original = store.load()
+    at.text_input(key='suggestion_title').set_value('A joint paper to check')
+    at.multiselect(key='suggestion_people').set_value(['test-a', 'test-b'])
+    at.text_input(key='suggestion_source').set_value('10.1234/joint')
+    at.text_area(key='suggestion_note').set_value('The source lists both authors.')
+    at.text_input(key='suggestion_submitter').set_value('Test contributor')
+    next(x for x in at.button if x.label == 'Submit suggestion').click().run()
+    assert not at.exception
+    record = store.suggestions()[0]
+    assert record['title'] == 'A joint paper to check' and record['status'] == 'pending'
+    assert at.text_input(key='suggestion_title').value == ''
+    assert any('Suggestion saved' in x.value for x in at.success)
+    at.selectbox(key='suggestion_review_status_' + record['id']).set_value('resolved')
+    at.text_area(key='suggestion_review_note_' + record['id']).set_value('Checked: the paper is already present.')
+    next(x for x in at.button if x.label == 'Save suggestion review').click().run()
+    assert not at.exception
+    assert store.suggestions()[0]['status'] == 'resolved'
+    assert len(store.suggestions()[0]['history']) == 2
+    assert store.load() == original
+    at.selectbox(key='suggestion_status_filter').set_value('pending').run()
+    assert not at.exception
+    assert any('No suggestions match' in x.value for x in at.info)
+
+
+def test_invalid_joint_suggestion_keeps_draft_for_correction(tmp_path, monkeypatch, researchers):
+    at, store = app_with_fixture(tmp_path, monkeypatch, researchers)
+    at.text_input(key='suggestion_title').set_value('A draft with one author')
+    at.multiselect(key='suggestion_people').set_value(['test-a'])
+    at.text_input(key='suggestion_source').set_value('10.1234/joint')
+    at.text_area(key='suggestion_note').set_value('I need to add the second author.')
+    next(x for x in at.button if x.label == 'Submit suggestion').click().run()
+    assert not at.exception
+    assert not store.suggestions()
+    assert at.text_input(key='suggestion_title').value == 'A draft with one author'
+    assert any('at least two researchers' in x.value for x in at.error)

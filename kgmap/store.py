@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import uuid
 from pathlib import Path
 
 from .core import ROOT, utcnow
@@ -21,6 +22,8 @@ class Store:
                     (id INTEGER PRIMARY KEY CHECK(id=1), payload TEXT, updated_at TEXT);
                 CREATE TABLE IF NOT EXISTS reviews
                     (id TEXT PRIMARY KEY, status TEXT, note TEXT, updated_at TEXT);
+                CREATE TABLE IF NOT EXISTS suggestions
+                    (id TEXT PRIMARY KEY, payload TEXT, created_at TEXT, updated_at TEXT);
             """)
 
     def connect(self):
@@ -63,3 +66,41 @@ class Store:
             for key, r in records.items():
                 db.execute("INSERT OR REPLACE INTO reviews VALUES (?,?,?,?)",
                            (key, r["status"], r.get("note", ""), r.get("updated_at") or utcnow()))
+
+    def suggestions(self):
+        with self.connect() as db:
+            rows = db.execute("SELECT payload FROM suggestions ORDER BY created_at DESC, id").fetchall()
+        return [json.loads(row[0]) for row in rows]
+
+    def add_suggestion(self, data):
+        from .suggestions import validate_suggestion
+        snapshot = self.load()
+        if not snapshot:
+            raise ValueError("Load a research map before submitting a suggestion.")
+        clean = validate_suggestion(data, snapshot)
+        now, sid = utcnow(), "suggestion:" + uuid.uuid4().hex
+        record = {**clean, "id": sid, "status": "pending", "review_note": "",
+                  "created_at": now, "updated_at": now,
+                  "history": [{"status": "pending", "note": "Submitted", "by": clean["submitter"], "at": now}]}
+        with self.connect() as db:
+            db.execute("INSERT INTO suggestions VALUES (?,?,?,?)", (sid, json.dumps(record, ensure_ascii=False), now, now))
+        return record
+
+    def review_suggestion(self, sid, status, note="", reviewer=""):
+        from .suggestions import STATUSES, text_field
+        if status not in STATUSES:
+            raise ValueError("Choose a valid suggestion status.")
+        note = text_field({"note": note}, "note", 5000, required=status in {"resolved", "rejected"})
+        reviewer = text_field({"reviewer": reviewer}, "reviewer", 120)
+        with self.connect() as db:
+            # Serialise concurrent reviews so neither review event is lost.
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute("SELECT payload FROM suggestions WHERE id=?", (sid,)).fetchone()
+            if not row:
+                raise ValueError("Suggestion not found.")
+            record, now = json.loads(row[0]), utcnow()
+            record.update(status=status, review_note=note, updated_at=now)
+            record["history"].append({"status": status, "note": note, "by": reviewer, "at": now})
+            db.execute("UPDATE suggestions SET payload=?,updated_at=? WHERE id=?",
+                       (json.dumps(record, ensure_ascii=False), now, sid))
+        return record

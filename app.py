@@ -15,6 +15,7 @@ from kgmap.fulltext import document
 from kgmap.inspection import EdgeInspector, FIELD_LABELS, RELATION_LABELS, safe_source_url
 from kgmap.report import identity_rows, render_report
 from kgmap.store import Store
+from kgmap.suggestion_ui import render_suggestions
 from kgmap.visualisation import graph_html
 
 st.set_page_config(page_title="Leeds · Mathematical connections", page_icon="◈", layout="wide")
@@ -158,7 +159,7 @@ metrics[2].metric("Mathematical topics", len(visible["concepts"]))
 metrics[3].metric("Abstract coverage", f"{sum(bool(p.get('abstract')) for p in visible['publications'])}/{len(visible['publications'])}")
 full_count = sum(bool(document(p)) for p in visible["publications"])
 st.caption(f"Full text cached for {full_count}/{len(visible['publications'])} publications in view · " + ("included in analysis" if include_full_text else "metadata analysis selected") + ". Unequal coverage affects score comparisons.")
-tabs = st.tabs(["Explore maps", "Candidate connections", "Publications", "Identity & sources", "Review"])
+tabs = st.tabs(["Explore maps", "Candidate connections", "Publications", "Identity & sources", "Review", "Suggestions"])
 
 with tabs[0]:
     view_label = st.radio("Map view", ["Knowledge map", "Researcher network", "Integrated map"], horizontal=True, label_visibility="collapsed", key="map_view")
@@ -184,6 +185,7 @@ with tabs[0]:
     st.markdown('<div class="legend"><span>🟢 Researcher</span><span>🟦 Publication</span><span>🟠 Concept</span>'
                 '<span style="color:#176B63">━━ Coauthorship</span><span style="color:#9A79B6">┄┄ Thematic candidate</span>'
                 '<span style="color:#B2823C">┄┄ Concept association</span><span>Thin solid: source text / authorship</span><span>Red: selected path</span></div>', unsafe_allow_html=True)
+    st.caption("Thicker dotted lines indicate higher scores on a fixed scale across filters. Concept associations and researcher candidates use different scoring methods; hover for the exact score.")
     shown = graph_view(graph, view, threshold, selected_types)
     show_edge_labels = st.toggle("Show relationship labels", value=False, key="edge_labels",
                                  help="Adds relationship names, paper counts or candidate scores to the links. Dense maps are easier to read with labels off.")
@@ -391,6 +393,9 @@ with tabs[4]:
         st.info("No relationships in this category.")
     st.download_button("Export saved reviews", json.dumps(reviews, ensure_ascii=False, indent=2), "reviews.json", "application/json")
     st.caption("Rejected topic extractions and concept associations are excluded before filtered graph scores are recomputed. Rejected researcher proposals are hidden. Corrected notes preserve original evidence for audit.")
+
+with tabs[5]:
+    render_suggestions(store, snapshot)
 
 st.divider()
 st.caption("LEEDS MATH MAP · Local research prototype · Solid edges carry metadata or explicit text evidence. Dashed edges are candidates for mathematical review.")
